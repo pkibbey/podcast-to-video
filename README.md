@@ -1,6 +1,58 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Podcast to Video Converter
+
+A Next.js TypeScript application that converts podcast audio files into videos with generated ambient music, abstract visuals, and subtitles.
+
+## Features
+
+- **Audio Upload**: Support for MP3, WAV, M4A, AAC, OGG, and FLAC files (up to 500MB)
+- **Real-time Processing**: Live progress tracking for video generation
+- **Ambient Music**: Generated or selected background music with intelligent ducking
+- **Abstract Visuals**: Particle systems and waveform visualizations
+- **Subtitles**: Automatic speech-to-text transcription with phrase-level timing
+- **4K Output**: High-quality video generation
+- **AI Integration**: Automatic title and description generation
+
+## Technology Stack
+
+- **Frontend**: Next.js 15 with App Router, TypeScript, Tailwind CSS
+- **Backend**: Next.js API routes
+- **Audio Processing**: FFmpeg, Web Audio API
+- **Transcription**: OpenAI Whisper (local)
+- **Video Generation**: Canvas API, FFmpeg
+- **AI**: Ollama for content generation
 
 ## Getting Started
+
+### Prerequisites
+
+- Node.js 18+ 
+- npm or yarn
+- FFmpeg (for audio/video processing)
+- Python 3.8+ (for Whisper transcription)
+
+### Installation
+
+1. Clone the repository and install dependencies:
+   ```bash
+   npm install
+   ```
+
+2. Install FFmpeg:
+   ```bash
+   # macOS
+   brew install ffmpeg
+   
+   # Ubuntu/Debian
+   sudo apt update
+   sudo apt install ffmpeg
+   ```
+
+3. Install Whisper (optional, for transcription):
+   ```bash
+   pip install openai-whisper
+   ```
+
+### Development
 
 First, run the development server:
 
