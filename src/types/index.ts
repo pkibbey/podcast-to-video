@@ -1,3 +1,5 @@
+import type { AudioAnalysis } from '@/utils/audioProcessing'
+
 // Types for the podcast-to-video application
 export interface AudioFile {
   id: string;
@@ -19,6 +21,7 @@ export interface ProcessingJob {
   outputPath?: string;
   error?: string;
   steps: ProcessingStep[];
+  audioAnalysis?: AudioAnalysis;
 }
 
 export interface ProcessingStep {

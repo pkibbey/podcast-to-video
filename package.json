@@ -4,10 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "source ./venv/bin/activate && next dev --turbopack",
+    "dev:venv": "source ./venv/bin/activate && next dev --turbopack",
+    "start": "source ./venv/bin/activate && next start",
     "build": "next build",
-    "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "setup": "node scripts/setup-check.js"
   },
   "dependencies": {
     "@types/fluent-ffmpeg": "^2.1.27",

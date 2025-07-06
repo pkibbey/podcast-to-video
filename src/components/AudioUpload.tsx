@@ -4,6 +4,45 @@ import { useState, useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { ProcessingJob } from '@/types'
 
+function AudioAnalysisDetails({ analysis }: { analysis: any }) {
+  if (!analysis) return null;
+  // Heuristic: flag as suspicious if duration is 0, sampleRate < 4000, or channels < 1
+  const suspicious = !analysis.duration || analysis.sampleRate < 4000 || analysis.channels < 1;
+  return (
+    <div className="mt-2 p-4 border rounded-lg bg-gray-50">
+      <div className="font-semibold mb-2">Audio Analysis Details</div>
+      <div className="grid grid-cols-2 gap-2 text-sm">
+        <div>Duration:</div><div>{analysis.duration.toFixed(2)}s</div>
+        <div>Sample Rate:</div><div>{analysis.sampleRate} Hz</div>
+        <div>Channels:</div><div>{analysis.channels}</div>
+        <div>Bit Rate:</div><div>{analysis.bitRate} bps</div>
+        <div>Format:</div><div>{analysis.format}</div>
+      </div>
+      {suspicious && (
+        <div className="mt-2 text-yellow-700 bg-yellow-100 rounded p-2 text-xs">
+          ⚠️ This result may be a false positive. Please check your audio file.
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AudioAnalysisExpand({ analysis }: { analysis: any }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button
+        type="button"
+        className="ml-2 text-blue-600 underline text-xs focus:outline-none"
+        onClick={e => { e.stopPropagation(); setOpen(v => !v) }}
+      >
+        {open ? 'Hide details' : 'Show details'}
+      </button>
+      {open && <AudioAnalysisDetails analysis={analysis} />}
+    </>
+  )
+}
+
 export default function AudioUpload() {
   const [processingJob, setProcessingJob] = useState<ProcessingJob | null>(null)
   const [isUploading, setIsUploading] = useState(false)
@@ -45,15 +84,21 @@ export default function AudioUpload() {
       try {
         const response = await fetch(`/api/progress/${jobId}`)
         const job = await response.json()
-        
+        if (job.error) {
+          clearInterval(interval)
+          setProcessingJob(null)
+          alert(job.error)
+          return
+        }
         setProcessingJob(job)
-        
         if (job.status === 'completed' || job.status === 'failed') {
           clearInterval(interval)
         }
       } catch (error) {
         console.error('Progress polling error:', error)
         clearInterval(interval)
+        setProcessingJob(null)
+        alert('Progress polling failed. Please try again.')
       }
     }, 2000)
   }
@@ -115,7 +160,7 @@ export default function AudioUpload() {
         </div>
       )}
 
-      {processingJob && (
+      {processingJob && processingJob.status && (
         <div className="bg-white rounded-lg shadow-lg p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-semibold text-gray-900">Processing</h2>
@@ -151,7 +196,12 @@ export default function AudioUpload() {
                     step.status === 'failed' ? 'bg-red-500' :
                     'bg-gray-300'
                   }`}></div>
-                  <span className="text-sm font-medium text-gray-700">{step.name}</span>
+                  <span className="text-sm font-medium text-gray-700">
+                    {step.name}
+                    {step.name === 'Audio Analysis' && processingJob.audioAnalysis && (
+                      <AudioAnalysisExpand analysis={processingJob.audioAnalysis} />
+                    )}
+                  </span>
                 </div>
                 <span className="text-xs text-gray-500">{step.progress}%</span>
               </div>
@@ -183,6 +233,8 @@ export default function AudioUpload() {
               </button>
             </div>
           )}
+
+          <AudioAnalysisDetails analysis={processingJob.audioAnalysis} />
         </div>
       )}
     </div>

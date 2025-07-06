@@ -72,6 +72,45 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Development Status
+
+**Phase 1: ✅ Complete**
+- Project setup and infrastructure  
+- Basic file upload interface
+- API routes for processing pipeline
+- Progress tracking system
+
+**Phase 2: ✅ Complete**
+- Audio analysis with FFmpeg integration
+- Speech-to-text transcription with Whisper
+- SRT subtitle generation
+- Waveform data extraction
+- Real audio processing pipeline
+
+**Phase 3: 📋 Planned**
+- Ambient music generation
+- Abstract visual generation
+- Video assembly pipeline
+
+**Phase 4: 📋 Planned**
+- AI content generation with Ollama
+- Performance optimization
+- Error handling improvements
+
+## System Requirements Check
+
+Run the setup checker to verify your system has all required dependencies:
+
+```bash
+npm run setup
+```
+
+This will check for:
+- FFmpeg (required for audio processing)
+- Node.js (required)
+- Python (optional, for Whisper transcription)
+- Whisper (optional, will use mock transcription if not installed)
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
