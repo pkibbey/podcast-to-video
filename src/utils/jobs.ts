@@ -1,10 +1,63 @@
-import { ProcessingJob, TranscriptionSegment } from '@/types'
+import { ProcessingJob, TranscriptionSegment, VisualPerformanceMode } from '@/types'
 import { readFile, writeFile } from 'fs/promises'
 import { readFileSync } from 'fs'
 import path from 'path'
-import { analyzeAudio, transcribeAudio, generateSRT, convertToWav, extractWaveform, generateChillSoundtrackFromLocal, generateAbstractVisuals, generateSimpleVisuals, assembleVideo, combineAudioWithDucking, generateYouTubeMetadata, saveMetadataToFile } from '@/utils/audioProcessing'
+import { analyzeAudio, transcribeAudio, generateSRT, convertToWav, extractWaveform, generateChillSoundtrackFromLocal, generateAbstractVisuals, generateSimpleVisuals, generateFastVisuals, generateStreamingVisuals, generateYouTubeMetadata, saveMetadataToFile } from '@/utils/audioProcessing'
+import { assembleVideo, combineAudioWithDucking } from '@/utils/videoProcessing'
+import { VISUAL_PERFORMANCE_MODES, DEFAULT_VISUAL_MODE } from '@/constants/performance'
 
 const JOBS_PATH = path.join(process.cwd(), 'jobs.json');
+
+// Limit processing to 1 minute for testing/faster processing
+const MAX_PROCESSING_DURATION = 60; // seconds
+
+// Add a processing lock to prevent concurrent step execution
+const processingLocks = new Map<string, Promise<boolean>>();
+
+// Track if auto-resume has already run to prevent infinite loops
+let autoResumeHasRun = false;
+
+// Export for debugging purposes
+export function getProcessingLocks(): string[] {
+  return Array.from(processingLocks.keys());
+}
+
+// Reset auto-resume flag (useful for debugging)
+export function resetAutoResumeFlag() {
+  autoResumeHasRun = false;
+}
+
+// Clear stuck processing states for a job
+export async function clearStuckProcessingStates(jobId: string) {
+  const job = jobs.get(jobId);
+  if (!job) return false;
+  
+  // Clear any processing locks for this job
+  for (let i = 0; i < job.steps.length; i++) {
+    const lockKey = `${jobId}-${i}`;
+    processingLocks.delete(lockKey);
+  }
+  
+  // Reset any stuck processing steps to pending
+  let hasStuckSteps = false;
+  for (const step of job.steps) {
+    if (step.status === 'processing') {
+      step.status = 'pending';
+      step.progress = 0;
+      if (step.error) delete step.error;
+      hasStuckSteps = true;
+    }
+  }
+  
+  if (hasStuckSteps) {
+    job.status = 'pending';
+    jobs.set(jobId, job);
+    await saveJobs();
+    console.log(`Cleared stuck processing states for job ${jobId}`);
+  }
+  
+  return hasStuckSteps;
+}
 
 function loadJobsSync(): Map<string, ProcessingJob> {
   try {
@@ -64,6 +117,21 @@ export async function updateJobStep(jobId: string, stepIndex: number, status: 'p
 export async function processAudioFile(jobId: string) {
   const job = jobs.get(jobId)
   if (!job) return
+  
+  // Check if job is already being processed
+  if (job.status === 'processing') {
+    // Check if any step is currently locked (actively being processed)
+    const hasActiveLocks = job.steps.some((step, index) => {
+      const lockKey = `${jobId}-${index}`;
+      return processingLocks.has(lockKey);
+    });
+    
+    if (hasActiveLocks) {
+      console.log(`Job ${jobId} is already being processed - skipping duplicate processAudioFile call`);
+      return;
+    }
+  }
+  
   job.status = 'processing'
   jobs.set(jobId, job)
   await saveJobs()
@@ -112,7 +180,7 @@ export async function processAudioFile(jobId: string) {
       } else if (i === 2) { // Music Generation (real)
         await updateJobStep(jobId, 2, 'processing')
         const tempDir = path.join(process.cwd(), 'temp')
-        const duration = job.audioFile.duration || (job.audioAnalysis?.duration ?? 180)
+        const duration = Math.min(job.audioFile.duration || (job.audioAnalysis?.duration ?? 180), MAX_PROCESSING_DURATION)
         const musicPath = path.join(tempDir, `${jobId}-music.wav`)
         await generateChillSoundtrackFromLocal(Math.ceil(duration), musicPath)
         job.steps[2].details = { info: 'Ambient music generated from local files', musicPath }
@@ -120,40 +188,12 @@ export async function processAudioFile(jobId: string) {
         await saveJobs()
         await updateJobStep(jobId, 2, 'completed')
       } else if (i === 3) { // Visual Generation
-        await updateJobStep(jobId, 3, 'processing')
-        const tempDir = path.join(process.cwd(), 'temp')
-        const duration = job.audioFile.duration || (job.audioAnalysis?.duration ?? 180)
-        const visualsPath = path.join(tempDir, `${jobId}-visuals.mp4`)
-        const waveformData = job.audioAnalysis?.waveformData || []
-        
-        try {
-          // Try advanced visual generation first
-          await generateAbstractVisuals(job.audioFile.path, waveformData, visualsPath, duration)
-          job.steps[3].details = { 
-            info: 'Abstract visuals generated with waveform synchronization', 
-            visualsPath,
-            duration,
-            resolution: '1920x1080'
-          }
-        } catch (error) {
-          console.log('Advanced visual generation failed, using simple visuals:', error)
-          // Fallback to simpler visual generation
-          await generateSimpleVisuals(duration, visualsPath, waveformData)
-          job.steps[3].details = { 
-            info: 'Simple abstract visuals generated', 
-            visualsPath,
-            duration,
-            resolution: '1920x1080'
-          }
-        }
-        
-        jobs.set(jobId, job)
-        await saveJobs()
-        await updateJobStep(jobId, 3, 'completed')
+        // Use the centralized step processing with locking
+        await processSpecificStep(jobId, 3)
       } else if (i === 4) { // Video Assembly
         await updateJobStep(jobId, 4, 'processing')
         const tempDir = path.join(process.cwd(), 'temp')
-        const duration = job.audioFile.duration || (job.audioAnalysis?.duration ?? 180)
+        const duration = Math.min(job.audioFile.duration || (job.audioAnalysis?.duration ?? 180), MAX_PROCESSING_DURATION)
         
         // Check if required files exist
         const visualsPath = path.join(tempDir, `${jobId}-visuals.mp4`)
@@ -227,7 +267,7 @@ export async function processAudioFile(jobId: string) {
       } else if (i === 5) { // Metadata Generation
         await updateJobStep(jobId, 5, 'processing')
         const tempDir = path.join(process.cwd(), 'temp')
-        const duration = job.audioFile.duration || (job.audioAnalysis?.duration ?? 180)
+        const duration = Math.min(job.audioFile.duration || (job.audioAnalysis?.duration ?? 180), MAX_PROCESSING_DURATION)
         
         try {
           // Load transcript if not already in job object
@@ -324,15 +364,57 @@ export async function processAudioFile(jobId: string) {
 }
 
 export async function processSpecificStep(jobId: string, stepIndex: number) {
-  const job = jobs.get(jobId)
-  if (!job) return false
-
-  if (stepIndex < 0 || stepIndex >= job.steps.length) return false
+  const lockKey = `${jobId}-${stepIndex}`;
   
-  const step = job.steps[stepIndex]
-  if (step.status !== 'processing') return false
-
+  // Check if this step is already being processed
+  if (processingLocks.has(lockKey)) {
+    console.log(`Step ${stepIndex} for job ${jobId} is already being processed - waiting for existing process`);
+    // Wait for the existing process to complete
+    try {
+      return await processingLocks.get(lockKey)!;
+    } catch (error) {
+      console.log(`Existing process failed, will retry: ${error}`);
+    }
+  }
+  
+  // Create a new promise for this processing step
+  const processingPromise = actuallyProcessStep(jobId, stepIndex);
+  processingLocks.set(lockKey, processingPromise);
+  
+  console.log(`Lock acquired for ${lockKey}. Current locks:`, Array.from(processingLocks.keys()));
+  
   try {
+    const result = await processingPromise;
+    return result;
+  } finally {
+    // Always release the lock
+    processingLocks.delete(lockKey);
+    console.log(`Released lock for ${lockKey}. Remaining locks:`, Array.from(processingLocks.keys()));
+  }
+}
+
+async function actuallyProcessStep(jobId: string, stepIndex: number): Promise<boolean> {
+  try {
+    const job = jobs.get(jobId)
+    if (!job) {
+      console.log(`Job ${jobId} not found`);
+      return false;
+    }
+
+    if (stepIndex < 0 || stepIndex >= job.steps.length) {
+      console.log(`Invalid step index ${stepIndex} for job ${jobId}`);
+      return false;
+    }
+    
+    const step = job.steps[stepIndex]
+    if (step.status !== 'processing') {
+      console.log(`Step ${stepIndex} for job ${jobId} is not in processing state: ${step.status}`);
+      return false;
+    }
+
+    console.log(`Starting step ${stepIndex} for job ${jobId}: ${step.name}`);
+    console.log('STEP: ', step)
+
     if (stepIndex === 0) { // Audio Analysis
       const audioAnalysis = await analyzeAudio(job.audioFile.path)
       job.audioFile.duration = audioAnalysis.duration
@@ -379,24 +461,117 @@ export async function processSpecificStep(jobId: string, stepIndex: number) {
       const visualsPath = path.join(tempDir, `${jobId}-visuals.mp4`)
       const waveformData = job.audioAnalysis?.waveformData || []
       
+      // Get performance mode from job options or use default
+      const performanceMode: VisualPerformanceMode = (job as any).visualMode || DEFAULT_VISUAL_MODE;
+      const modeConfig = VISUAL_PERFORMANCE_MODES[performanceMode];
+      
       try {
-        // Try advanced visual generation first
-        await generateAbstractVisuals(job.audioFile.path, waveformData, visualsPath, duration)
+        // Use optimized streaming visual generation for better performance
+        console.log(`Starting optimized streaming visual generation for job ${jobId} (${performanceMode} mode)`);
+        
+        await generateStreamingVisuals(
+          job.audioFile.path, 
+          waveformData, 
+          visualsPath, 
+          duration,
+          {
+            chunkDuration: modeConfig.chunkDuration,
+            width: modeConfig.width,
+            height: modeConfig.height,
+            fps: modeConfig.fps,
+            onProgress: (progress) => {
+              // Update step details with progress
+              job.steps[3].details = { 
+                info: `Generating visuals (${performanceMode})... ${Math.round(progress * 100)}%`,
+                progress: Math.round(progress * 100),
+                visualsPath,
+                duration,
+                resolution: `${modeConfig.width}x${modeConfig.height}`,
+                mode: performanceMode
+              };
+              jobs.set(jobId, job);
+              saveJobs().catch(console.error);
+            }
+          }
+        );
+        
+        console.log(`Optimized streaming visual generation completed for job ${jobId}`);
         job.steps[3].details = { 
-          info: 'Abstract visuals generated with waveform synchronization', 
+          info: `High-speed visuals generated (${performanceMode} mode)`, 
           visualsPath,
           duration,
-          resolution: '1920x1080'
-        }
+          resolution: `${modeConfig.width}x${modeConfig.height}`,
+          mode: performanceMode
+        };
       } catch (error) {
-        console.log('Advanced visual generation failed, using simple visuals:', error)
-        // Fallback to simpler visual generation
-        await generateSimpleVisuals(duration, visualsPath, waveformData)
-        job.steps[3].details = { 
-          info: 'Simple abstract visuals generated', 
-          visualsPath,
-          duration,
-          resolution: '1920x1080'
+        console.log(`Optimized visual generation failed for job ${jobId}, trying ultra-fast fallback:`, error)
+        
+        // Fallback to ultra-fast single-pass generation
+        try {
+          console.log(`Using ultra-fast fallback for job ${jobId}`);
+          const fastMode = VISUAL_PERFORMANCE_MODES['real-time'];
+          await generateFastVisuals(
+            job.audioFile.path,
+            waveformData,
+            visualsPath,
+            duration,
+            {
+              width: fastMode.width,
+              height: fastMode.height,
+              fps: fastMode.fps,
+              preset: fastMode.preset,
+              quality: fastMode.quality,
+              useGPU: true
+            }
+          );
+          
+          console.log(`Ultra-fast visual generation completed for job ${jobId}`);
+          job.steps[3].details = { 
+            info: 'Ultra-fast draft visuals generated (fallback)', 
+            visualsPath,
+            duration,
+            resolution: `${fastMode.width}x${fastMode.height}`,
+            mode: 'real-time-fallback'
+          };
+        } catch (fallbackError) {
+          console.log(`Ultra-fast visual generation also failed for job ${jobId}, using simple fallback:`, fallbackError)
+          
+          // Kill any remaining FFmpeg processes for this job before starting fallback
+          try {
+            const { exec } = require('child_process')
+            console.log(`Killing any existing FFmpeg processes for job ${jobId}`);
+            
+            await new Promise<void>((resolve) => {
+              exec(`pkill -f "ffmpeg.*${jobId}-visuals.mp4"`, (error: any) => {
+                if (error && error.code !== 1) { // code 1 means no processes found, which is fine
+                  console.log('pkill error (might be expected if no processes found):', error)
+                }
+                console.log('pkill completed')
+                resolve()
+              })
+            })
+            
+            // Wait for processes to be killed
+            await new Promise(resolve => setTimeout(resolve, 2000))
+            
+          } catch (killError) {
+            console.log('Error during FFmpeg process cleanup:', killError)
+          }
+          
+          // Final fallback to simple visuals
+          console.log(`Starting simple visual generation fallback for job ${jobId}`);
+          await generateSimpleVisuals(duration, visualsPath, waveformData, {
+            width: 854,
+            height: 480,
+            fps: 15
+          });
+          console.log(`Simple visual generation completed successfully for job ${jobId}`);
+          job.steps[3].details = { 
+            info: 'Simple abstract visuals generated', 
+            visualsPath,
+            duration,
+            resolution: '854x480'
+          };
         }
       }
       
@@ -428,11 +603,11 @@ export async function processSpecificStep(jobId: string, stepIndex: number) {
         // Then assemble the final video with mixed audio, visuals, and subtitles
         console.log('Assembling final video...')
         await assembleVideo(mixedAudioPath, visualsPath, subtitlesPath, finalVideoPath, {
-          width: 1920,
+          width: 1920,       // Output at 1080p regardless of visual input resolution
           height: 1080,
           fps: 30,
           bitrate: '5000k',
-          preset: 'medium',
+          preset: 'fast',    // Faster preset for better performance
           crf: 20
         })
         
@@ -457,7 +632,8 @@ export async function processSpecificStep(jobId: string, stepIndex: number) {
             width: 1920,
             height: 1080,
             fps: 30,
-            bitrate: '4000k'
+            bitrate: '4000k',
+            preset: 'fast'  // Faster preset
           })
           
           job.steps[4].details = { 
@@ -481,9 +657,6 @@ export async function processSpecificStep(jobId: string, stepIndex: number) {
       const duration = job.audioFile.duration || (job.audioAnalysis?.duration ?? 180)
       
       try {
-        // Load transcript if not already in job object
-        await loadTranscriptIfNeeded(jobId, job)
-        
         // Generate YouTube metadata from transcript
         if (job.transcript) {
           console.log('Generating YouTube metadata from transcript...')
@@ -577,11 +750,16 @@ export async function processSpecificStep(jobId: string, stepIndex: number) {
 
     return true
   } catch (error: unknown) {
-    step.status = 'failed'
-    step.error = error instanceof Error ? error.message : 'Unknown error'
-    job.status = 'pending' // Allow retry of other steps
-    jobs.set(jobId, job)
-    await saveJobs()
+    // Get job and step again to ensure we have the latest state
+    const currentJob = jobs.get(jobId)
+    if (currentJob && stepIndex >= 0 && stepIndex < currentJob.steps.length) {
+      const currentStep = currentJob.steps[stepIndex]
+      currentStep.status = 'failed'
+      currentStep.error = error instanceof Error ? error.message : 'Unknown error'
+      currentJob.status = 'pending' // Allow retry of other steps
+      jobs.set(jobId, currentJob)
+      await saveJobs()
+    }
     throw error
   }
 }
@@ -619,12 +797,67 @@ async function loadTranscriptIfNeeded(jobId: string, job: ProcessingJob): Promis
   }
 }
 
-// On module load, resume any jobs in processing state
+export type { VisualPerformanceMode } from '@/types';
+
+// On module load, resume any jobs in processing state (but only once)
 ;(async () => {
+  // Prevent auto-resume from running multiple times
+  if (autoResumeHasRun) {
+    return;
+  }
+  autoResumeHasRun = true;
+
+  // Wait a bit to ensure any existing processes can establish their locks
+  await new Promise(resolve => setTimeout(resolve, 1000));
+
   for (const [jobId, job] of jobs.entries()) {
+    // Only resume jobs that are explicitly marked as needing resumption
+    // AND not already being processed (check for locks)
     if (job.status === 'processing' || job.steps.some(s => s.status === 'processing')) {
-      // Resume processing in background
-      processAudioFile(jobId)
+      // Check if this job is already being processed via locks
+      const hasActiveStep = job.steps.some((step, index) => {
+        const lockKey = `${jobId}-${index}`;
+        return step.status === 'processing' && processingLocks.has(lockKey);
+      });
+      
+      if (hasActiveStep) {
+        console.log(`Skipping auto-resume for job ${jobId} - already being processed`);
+        continue;
+      }
+      
+      // Check if there are any FFmpeg processes running for this job
+      try {
+        const { exec } = require('child_process');
+        await new Promise<boolean>((resolve) => {
+          exec(`ps aux | grep "ffmpeg.*${jobId}" | grep -v grep`, (error: any, stdout: any) => {
+            if (stdout && stdout.trim()) {
+              console.log(`Skipping auto-resume for job ${jobId} - FFmpeg processes still running`);
+              resolve(true); // processes found
+            } else {
+              resolve(false); // no processes found
+            }
+          });
+        }).then((hasProcesses) => {
+          if (hasProcesses) {
+            return;
+          }
+          
+          // Only resume if no active processes found
+          console.log(`Auto-resuming job ${jobId} after server restart`);
+          processAudioFile(jobId).catch(async (error: unknown) => {
+            console.error('Auto-resume processing error:', error)
+            const job = jobs.get(jobId)
+            if (job) {
+              job.status = 'failed'
+              job.error = error instanceof Error ? error.message : 'Unknown error during auto-resume'
+              jobs.set(jobId, job)
+              await saveJobs()
+            }
+          })
+        });
+      } catch (processCheckError) {
+        console.log(`Process check failed for job ${jobId}, skipping auto-resume:`, processCheckError);
+      }
     }
   }
 })()

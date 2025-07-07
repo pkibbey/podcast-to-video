@@ -1,5 +1,8 @@
 import type { AudioAnalysis } from '@/utils/audioProcessing'
 
+// Visual performance modes for video generation
+export type VisualPerformanceMode = 'real-time' | 'fast' | 'balanced' | 'quality';
+
 // Types for the podcast-to-video application
 export interface AudioFile {
   id: string;
@@ -14,7 +17,7 @@ export interface AudioFile {
 export interface ProcessingJob {
   id: string;
   audioFile: AudioFile;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
+  status: 'uploaded' | 'pending' | 'processing' | 'completed' | 'failed';
   progress: number;
   startedAt: Date;
   completedAt?: Date;
@@ -24,6 +27,7 @@ export interface ProcessingJob {
   audioAnalysis?: AudioAnalysis;
   transcript?: Transcript;
   metadata?: VideoMetadata;
+  visualMode?: VisualPerformanceMode;
 }
 
 export interface ProcessingStep {

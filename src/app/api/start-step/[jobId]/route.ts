@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { jobs, saveJobs, processSpecificStep } from '@/utils/jobs'
+import { jobs, saveJobs, processSpecificStep, getProcessingLocks } from '@/utils/jobs'
 
 export async function POST(
   request: NextRequest,
@@ -9,21 +9,35 @@ export async function POST(
     const { jobId } = await params
     const { stepIndex } = await request.json()
     
+    console.log(`[API] POST /api/start-step/${jobId} - stepIndex: ${stepIndex}`)
+    
     const job = jobs.get(jobId)
     if (!job) {
+      console.log(`[API] Job ${jobId} not found`)
       return NextResponse.json({ error: 'Job not found' }, { status: 404 })
     }
 
     if (stepIndex < 0 || stepIndex >= job.steps.length) {
+      console.log(`[API] Invalid step index ${stepIndex} for job ${jobId}`)
       return NextResponse.json({ error: 'Invalid step index' }, { status: 400 })
     }
 
     const step = job.steps[stepIndex]
     if (step.status === 'completed') {
+      console.log(`[API] Step ${stepIndex} already completed for job ${jobId}`)
       return NextResponse.json({ error: 'Step already completed' }, { status: 400 })
     }
 
     if (step.status === 'processing') {
+      console.log(`[API] Step ${stepIndex} already processing for job ${jobId}`)
+      return NextResponse.json({ error: 'Step already processing' }, { status: 400 })
+    }
+
+    // Check if this step is currently locked (being processed by another request)
+    const lockKey = `${jobId}-${stepIndex}`
+    const activeLocks = getProcessingLocks()
+    if (activeLocks.includes(lockKey)) {
+      console.log(`[API] Step ${stepIndex} for job ${jobId} is locked (currently processing)`)
       return NextResponse.json({ error: 'Step already processing' }, { status: 400 })
     }
 
@@ -39,6 +53,7 @@ export async function POST(
     }
 
     // Start processing this specific step
+    console.log(`[API] Starting processing of step ${stepIndex} for job ${jobId}`)
     job.status = 'processing'
     step.status = 'processing'
     step.startedAt = new Date()
@@ -50,8 +65,9 @@ export async function POST(
     await saveJobs()
 
     // Process the step in background
+    console.log(`[API] Calling processSpecificStep(${jobId}, ${stepIndex})`)
     processSpecificStep(jobId, stepIndex).catch(async (error: unknown) => {
-      console.error('Step processing error:', error)
+      console.error('[API] Step processing error:', error)
       const job = jobs.get(jobId)
       if (job) {
         const step = job.steps[stepIndex]

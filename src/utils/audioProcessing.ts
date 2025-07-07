@@ -341,43 +341,49 @@ export async function generateAbstractVisuals(
   } = options
 
   return new Promise((resolve, reject) => {
-    // Create a complex filter for abstract visuals using FFmpeg's lavfi filters
-    const complexFilter = [
-      // Create base color gradient background
-      `color=c=0x1a1a1a:s=${width}x${height}:d=${duration}[bg]`,
-      
-      // Create multiple particle systems with different behaviors
-      `[bg]geq=r='128+64*sin(2*PI*T/3+X/50)':g='128+64*cos(2*PI*T/4+Y/50)':b='128+64*sin(2*PI*T/2+sqrt((X-W/2)^2+(Y-H/2)^2)/30)'[particles1]`,
-      
-      // Add waveform-responsive effects
-      `[particles1]geq=r='r(X,Y)+32*${waveformData.map((v, i) => `(T>=${i*duration/waveformData.length})*${Math.floor(v*255)}`).join('+')}':g='g(X,Y)':b='b(X,Y)'[responsive]`,
-      
-      // Add flowing wave patterns
-      `[responsive]geq=r='r(X,Y)+16*sin(2*PI*(X+T*100)/200)*cos(2*PI*(Y+T*50)/150)':g='g(X,Y)+16*cos(2*PI*(X+T*80)/180)*sin(2*PI*(Y+T*60)/120)':b='b(X,Y)+16*sin(2*PI*(X+T*120)/160)*cos(2*PI*(Y+T*90)/140)'[waves]`,
-      
-      // Add central waveform visualization
-      `[waves]drawgraph=m1='${waveformData.join('|')}':fg1=0xFFFFFF:s=${width}x${height}:flags=2[final]`
+    const { spawn } = require('child_process')
+    
+    // Create a simpler but more reliable visual using basic FFmpeg filters
+    // Fallback to simpler approach to avoid lavfi complex filter issues
+    const args = [
+      '-f', 'lavfi',
+      '-i', `color=c=black:s=${width}x${height}:d=${duration}:r=${fps}`,
+      '-vf', `geq=r='128+64*sin(2*PI*T/3+X/50)':g='128+64*cos(2*PI*T/4+Y/50)':b='128+64*sin(2*PI*T/2+sqrt((X-W/2)^2+(Y-H/2)^2)/30)',hue=h=t*30:s=2`,
+      '-c:v', 'libx264',
+      '-pix_fmt', 'yuv420p',
+      '-preset', 'medium',
+      '-crf', '23',
+      '-y', // Overwrite output file
+      outputPath
     ]
 
-    ffmpeg()
-      .input(`color=c=black:s=${width}x${height}:d=${duration}:r=${fps}`)
-      .inputFormat('lavfi')
-      .complexFilter(complexFilter)
-      .map('[final]')
-      .videoCodec('libx264')
-      .outputOptions([
-        '-pix_fmt', 'yuv420p',
-        '-preset', 'medium',
-        '-crf', '23'
-      ])
-      .format('mp4')
-      .output(outputPath)
-      .on('end', () => resolve(outputPath))
-      .on('error', (err) => {
-        console.error('Visual generation error:', err)
-        reject(err)
-      })
-      .run()
+    console.log('Generating abstract visuals with command:', FFMPEG_PATH, args.join(' '))
+    console.log(`Output path: ${outputPath}`)
+    
+    const process = spawn(FFMPEG_PATH, args)
+    console.log(`Spawned FFmpeg process with PID: ${process.pid}`)
+    
+    let stderr = ''
+    
+    process.stderr.on('data', (data: Buffer) => {
+      stderr += data.toString()
+    })
+    
+    process.on('close', (code: number | null) => {
+      if (code === 0) {
+        console.log('Abstract visuals generated successfully')
+        resolve(outputPath)
+      } else {
+        console.error('FFmpeg process failed with code:', code)
+        console.error('FFmpeg stderr:', stderr)
+        reject(new Error(`FFmpeg failed with code ${code}: ${stderr}`))
+      }
+    })
+    
+    process.on('error', (error: Error) => {
+      console.error('Failed to start FFmpeg process:', error)
+      reject(error)
+    })
   })
 }
 
@@ -401,142 +407,287 @@ export async function generateSimpleVisuals(
   } = options
 
   return new Promise((resolve, reject) => {
-    // Create a simpler but more reliable visual using basic FFmpeg filters
-    const filters = [
-      // Create animated gradient background
-      `mandelbrot=s=${width}x${height}:maxiter=100:rate=${fps}:outer=normalized_iteration_count`,
-      
-      // Add color cycling
-      'hue=h=t*60:s=sin(t)+1',
-      
-      // Add some blur for smoother effect
-      'gblur=sigma=2',
-      
-      // Adjust opacity and blend
-      'format=yuva420p,colorchannelmixer=aa=0.8'
+    const { spawn } = require('child_process')
+    
+    // Use direct FFmpeg command to avoid fluent-ffmpeg lavfi issues
+    const args = [
+      '-f', 'lavfi',
+      '-i', `mandelbrot=s=${width}x${height}:maxiter=100:rate=${fps}:outer=normalized_iteration_count`,
+      '-vf', `hue=h=t*60:s=sin(t)+1,gblur=sigma=2`,
+      '-c:v', 'libx264',
+      '-pix_fmt', 'yuv420p',
+      '-preset', 'medium',
+      '-crf', '23',
+      '-t', duration.toString(),
+      '-y', // Overwrite output file
+      outputPath
     ]
 
-    ffmpeg()
-      .input(`mandelbrot=s=${width}x${height}:maxiter=100:rate=${fps}:outer=normalized_iteration_count`)
-      .inputFormat('lavfi')
-      .videoFilters(filters)
-      .videoCodec('libx264')
-      .outputOptions([
-        '-pix_fmt', 'yuv420p',
-        '-preset', 'medium',
-        '-crf', '23',
-        `-t`, duration.toString()
-      ])
-      .format('mp4')
-      .output(outputPath)
-      .on('end', () => resolve(outputPath))
-      .on('error', (err) => {
-        console.error('Simple visual generation error:', err)
-        reject(err)
-      })
-      .run()
+    console.log('Generating simple visuals with command:', FFMPEG_PATH, args.join(' '))
+    console.log(`Output path: ${outputPath}`)
+    
+    const process = spawn(FFMPEG_PATH, args)
+    console.log(`Spawned FFmpeg process with PID: ${process.pid}`)
+    
+    let stderr = ''
+    
+    process.stderr.on('data', (data: Buffer) => {
+      stderr += data.toString()
+    })
+    
+    process.on('close', (code: number | null) => {
+      if (code === 0) {
+        console.log('Simple visuals generated successfully')
+        resolve(outputPath)
+      } else {
+        console.error('FFmpeg process failed with code:', code)
+        console.error('FFmpeg stderr:', stderr)
+        reject(new Error(`FFmpeg failed with code ${code}: ${stderr}`))
+      }
+    })
+    
+    process.on('error', (error: Error) => {
+      console.error('Failed to start FFmpeg process:', error)
+      reject(error)
+    })
   })
 }
 
 /**
- * Assemble final video by combining audio, visuals, and subtitles
+ * Generate ultra-fast visuals optimized for real-time processing
  */
-export async function assembleVideo(
-  audioPath: string,
-  visualsPath: string,
-  subtitlesPath: string,
-  outputPath: string,
+export async function generateFastVisuals(
+  audioPath: string, 
+  waveformData: number[], 
+  outputPath: string, 
+  duration: number,
   options: {
     width?: number
     height?: number
     fps?: number
-    bitrate?: string
-    preset?: string
-    crf?: number
+    preset?: 'ultrafast' | 'superfast' | 'veryfast'
+    quality?: 'draft' | 'medium' | 'high'
+    useGPU?: boolean
   } = {}
 ): Promise<string> {
   const {
-    width = 1920,
-    height = 1080,
-    fps = 30,
-    bitrate = '4000k',
-    preset = 'medium',
-    crf = 23
+    width = 1280,  // Lower resolution for speed
+    height = 720,
+    fps = 24,      // Lower framerate for speed
+    preset = 'ultrafast',
+    quality = 'draft',
+    useGPU = true
   } = options
 
   return new Promise((resolve, reject) => {
-    ffmpeg()
-      .input(visualsPath) // Video input
-      .input(audioPath)   // Audio input
-      .videoCodec('libx264')
-      .audioCodec('aac')
-      .videoFilters([
-        `subtitles=${subtitlesPath}:force_style='FontSize=24,PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,BorderStyle=1,Outline=2'`
-      ])
-      .outputOptions([
-        '-pix_fmt', 'yuv420p',
-        '-preset', preset,
-        '-crf', crf.toString(),
-        '-b:v', bitrate,
-        '-b:a', '192k',
-        '-movflags', '+faststart' // Optimize for web streaming
-      ])
-      .size(`${width}x${height}`)
-      .fps(fps)
-      .format('mp4')
-      .output(outputPath)
-      .on('end', () => resolve(outputPath))
-      .on('error', (err) => {
-        console.error('Video assembly error:', err)
-        reject(err)
-      })
-      .run()
+    const { spawn } = require('child_process')
+    
+    // Determine CRF based on quality setting
+    const crf = quality === 'draft' ? '28' : quality === 'medium' ? '23' : '18'
+    
+    const args = [
+      '-f', 'lavfi',
+      '-i', `color=c=#1a1a2e:s=${width}x${height}:d=${duration}:r=${fps}`,
+      '-vf', getOptimizedVisualFilter(quality),
+    ]
+
+    // Add GPU acceleration for macOS
+    if (useGPU) {
+      args.push('-hwaccel', 'videotoolbox')
+      args.push('-c:v', 'h264_videotoolbox')
+    } else {
+      args.push('-c:v', 'libx264')
+    }
+
+    args.push(
+      '-pix_fmt', 'yuv420p',
+      '-preset', preset,
+      '-crf', crf,
+      '-movflags', '+faststart',
+      '-y',
+      outputPath
+    )
+
+    console.log('Generating fast visuals with command:', FFMPEG_PATH, args.join(' '))
+    
+    const process = spawn(FFMPEG_PATH, args)
+    
+    let stderr = ''
+    
+    process.stderr.on('data', (data: Buffer) => {
+      stderr += data.toString()
+    })
+    
+    process.on('close', (code: number | null) => {
+      if (code === 0) {
+        console.log('Fast visuals generated successfully')
+        resolve(outputPath)
+      } else {
+        console.error('FFmpeg process failed with code:', code)
+        console.error('FFmpeg stderr:', stderr)
+        reject(new Error(`FFmpeg failed with code ${code}: ${stderr}`))
+      }
+    })
+    
+    process.on('error', (error: Error) => {
+      console.error('Failed to start FFmpeg process:', error)
+      reject(error)
+    })
   })
 }
 
 /**
- * Combine audio tracks with ducking (lower background music during speech)
+ * Get optimized visual filter based on quality level
  */
-export async function combineAudioWithDucking(
-  primaryAudioPath: string,
-  backgroundMusicPath: string,
+function getOptimizedVisualFilter(quality: 'draft' | 'medium' | 'high'): string {
+  switch (quality) {
+    case 'draft':
+      // Super simple gradient that changes color over time
+      return `geq=r='128+100*sin(t/10)':g='128+100*sin(t/8)':b='128+100*sin(t/12)'`
+    
+    case 'medium':
+      // Simple particle-like effect with lower complexity
+      return `geq=r='128+80*sin(2*t/5+X/100)':g='128+80*cos(2*t/7+Y/100)':b='128+80*sin(2*t/3+sqrt(X*X+Y*Y)/200)'`
+    
+    case 'high':
+      // More complex but still optimized effect
+      return `geq=r='128+60*sin(2*PI*t/8+X/50)*sin(Y/100)':g='128+60*cos(2*PI*t/6+Y/50)*cos(X/100)':b='128+60*sin(2*PI*t/4+sqrt((X-W/2)^2+(Y-H/2)^2)/100)'`
+    
+    default:
+      return `geq=r='128+100*sin(t/10)':g='128+100*sin(t/8)':b='128+100*sin(t/12)'`
+  }
+}
+
+/**
+ * Generate visuals in streaming chunks for better performance
+ */
+export async function generateStreamingVisuals(
+  audioPath: string,
+  waveformData: number[],
   outputPath: string,
+  duration: number,
   options: {
-    musicVolume?: number
-    duckingThreshold?: number
-    duckingRatio?: number
-    attackTime?: number
-    releaseTime?: number
+    chunkDuration?: number
+    width?: number
+    height?: number
+    fps?: number
+    onProgress?: (progress: number) => void
   } = {}
 ): Promise<string> {
   const {
-    musicVolume = 0.2,
-    duckingThreshold = -20,
-    duckingRatio = 4,
-    attackTime = 0.1,
-    releaseTime = 0.8
+    chunkDuration = 30, // 30-second chunks
+    width = 1280,
+    height = 720,
+    fps = 24,
+    onProgress
   } = options
 
-  return new Promise((resolve, reject) => {
-    ffmpeg()
-      .input(primaryAudioPath)
-      .input(backgroundMusicPath)
-      .complexFilter([
-        `[1]volume=${musicVolume}[music]`,
-        `[0][music]sidechaincompress=threshold=${duckingThreshold}dB:ratio=${duckingRatio}:attack=${attackTime}:release=${releaseTime}[ducked]`
-      ])
-      .map('[ducked]')
-      .audioCodec('pcm_s16le')
-      .audioChannels(2)
-      .audioFrequency(44100)
-      .format('wav')
-      .output(outputPath)
-      .on('end', () => resolve(outputPath))
-      .on('error', (err) => {
-        console.error('Audio ducking error:', err)
-        reject(err)
+  const chunks: string[] = []
+  const numChunks = Math.ceil(duration / chunkDuration)
+  
+  try {
+    // Generate chunks in parallel (up to 3 at a time to avoid overwhelming the system)
+    const chunkPromises: Promise<string>[] = []
+    
+    for (let i = 0; i < numChunks; i++) {
+      const chunkStart = i * chunkDuration
+      const chunkEnd = Math.min((i + 1) * chunkDuration, duration)
+      const actualChunkDuration = chunkEnd - chunkStart
+      
+      const chunkPath = outputPath.replace('.mp4', `_chunk_${i}.mp4`)
+      
+      const chunkPromise = generateFastVisuals(
+        audioPath,
+        waveformData,
+        chunkPath,
+        actualChunkDuration,
+        { width, height, fps, quality: 'draft' }
+      ).then((path) => {
+        if (onProgress) {
+          onProgress((i + 1) / numChunks)
+        }
+        return path
       })
-      .run()
+      
+      chunkPromises.push(chunkPromise)
+      chunks.push(chunkPath)
+      
+      // Process in batches of 3 to avoid overwhelming the system
+      if (chunkPromises.length >= 3 || i === numChunks - 1) {
+        await Promise.all(chunkPromises.splice(0, 3))
+      }
+    }
+    
+    // Concatenate all chunks
+    await concatenateVideoChunks(chunks, outputPath)
+    
+    // Clean up chunk files
+    chunks.forEach(chunkPath => {
+      try {
+        require('fs').unlinkSync(chunkPath)
+      } catch (error) {
+        console.warn('Failed to delete chunk file:', chunkPath)
+      }
+    })
+    
+    return outputPath
+    
+  } catch (error) {
+    // Clean up any created chunk files on error
+    chunks.forEach(chunkPath => {
+      try {
+        require('fs').unlinkSync(chunkPath)
+      } catch (cleanupError) {
+        // Ignore cleanup errors
+      }
+    })
+    throw error
+  }
+}
+
+/**
+ * Concatenate video chunks into final video
+ */
+async function concatenateVideoChunks(chunkPaths: string[], outputPath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const { spawn } = require('child_process')
+    const fs = require('fs')
+    const path = require('path')
+    
+    // Create concat file
+    const concatFilePath = outputPath.replace('.mp4', '_concat.txt')
+    const concatContent = chunkPaths.map(p => `file '${p}'`).join('\n')
+    fs.writeFileSync(concatFilePath, concatContent)
+    
+    const args = [
+      '-f', 'concat',
+      '-safe', '0',
+      '-i', concatFilePath,
+      '-c', 'copy',
+      '-y',
+      outputPath
+    ]
+    
+    const process = spawn(FFMPEG_PATH, args)
+    
+    process.on('close', (code: number | null) => {
+      // Clean up concat file
+      try {
+        fs.unlinkSync(concatFilePath)
+      } catch (error) {
+        console.warn('Failed to delete concat file:', concatFilePath)
+      }
+      
+      if (code === 0) {
+        resolve()
+      } else {
+        reject(new Error(`Concatenation failed with code ${code}`))
+      }
+    })
+    
+    process.on('error', (error: Error) => {
+      reject(error)
+    })
   })
 }
 
@@ -813,3 +964,22 @@ export async function saveMetadataToFile(
   await writeFile(outputPath, metadataJson, 'utf-8')
   return outputPath
 }
+
+/**
+ * Trim audio to first minute (60 seconds)
+ */
+export async function trimAudioToFirstMinute(inputPath: string, outputPath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    ffmpeg(inputPath)
+      .seekInput(0)
+      .duration(60) // Trim to 60 seconds
+      .output(outputPath)
+      .on('end', () => resolve(outputPath))
+      .on('error', reject)
+      .run()
+  })
+}
+
+/**
+ * Convert audio to WAV format
+ */

@@ -1,9 +1,12 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useDropzone } from 'react-dropzone'
-import { ProcessingJob } from '@/types'
+import { ProcessingJob, ProcessingStep } from '@/types'
 import { AudioAnalysis } from '@/utils/audioProcessing';
+import { getPerformanceEstimates, getRecommendedMode } from '@/utils/performance'
+import { VISUAL_PERFORMANCE_MODES, getPerformanceComparison, USAGE_RECOMMENDATIONS } from '@/constants/performance'
+import type { VisualPerformanceMode } from '@/types'
 
 function AudioAnalysisDetails({ analysis }: { analysis: AudioAnalysis | undefined }) {
   if (!analysis) return null;
@@ -28,7 +31,7 @@ function AudioAnalysisDetails({ analysis }: { analysis: AudioAnalysis | undefine
   )
 }
 
-function StepDetails({ step }: { step: any }) {
+function StepDetails({ step }: { step: ProcessingStep }) {
   if (!step.details) return null;
   if (step.name === 'Audio Analysis') {
     return <AudioAnalysisDetails analysis={step.details} />;
@@ -41,7 +44,7 @@ function StepDetails({ step }: { step: any }) {
   );
 }
 
-function StepExpand({ step }: { step: any }) {
+function StepExpand({ step }: { step: ProcessingStep }) {
   const [open, setOpen] = useState(false)
   return (
     <>
@@ -59,31 +62,86 @@ function StepExpand({ step }: { step: any }) {
 
 export default function AudioUpload({ jobId: initialJobId }: { jobId?: string } = {}) {
   const [processingJob, setProcessingJob] = useState<ProcessingJob | null>(null)
-  console.log('processingJob: ', processingJob)
   const [isUploading, setIsUploading] = useState(false)
-  console.log('isUploading: ', isUploading)
   const [isLoadingJob, setIsLoadingJob] = useState(!!initialJobId)
-  console.log('isLoadingJob: ', isLoadingJob)
+  const [selectedVisualMode, setSelectedVisualMode] = useState<VisualPerformanceMode>('fast')
+  const [showPerformanceDetails, setShowPerformanceDetails] = useState(false)
+  
+  // Store interval reference for cleanup
+  const intervalRef = useRef<NodeJS.Timeout | null>(null)
+
+  const pollProgress = useCallback(async (jobId: string) => {
+    // Clear any existing interval first
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current)
+      intervalRef.current = null
+    }
+    
+    console.log(`Starting progress polling for job: ${jobId}`)
+    
+    intervalRef.current = setInterval(async () => {
+      try {
+        const response = await fetch(`/api/progress/${jobId}`)
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`)
+        }
+        const job = await response.json()
+        setProcessingJob(job)
+        
+        // Stop polling if job is completed, failed, or if any step has failed
+        const hasFailedStep = job.steps && job.steps.some((step: ProcessingStep) => step.status === 'failed')
+        if (job.status === 'completed' || job.status === 'failed' || hasFailedStep) {
+          console.log(`Stopping progress polling for job: ${jobId} (status: ${job.status})`)
+          if (intervalRef.current) {
+            clearInterval(intervalRef.current)
+            intervalRef.current = null
+          }
+        }
+      } catch (error) {
+        console.error('Progress polling error:', error)
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current)
+          intervalRef.current = null
+        }
+        // Don't show alert for network errors, just stop polling
+        console.warn('Progress polling stopped due to error')
+      }
+    }, 2000)
+  }, [])
 
   // If jobId is provided, fetch job on mount
   useEffect(() => {
     if (initialJobId) {
+      console.log(`Fetching job data for: ${initialJobId}`)
       setIsLoadingJob(true)
       fetch(`/api/progress/${initialJobId}`)
         .then(res => res.json())
         .then(job => {
+          console.log(`Job data fetched for ${initialJobId}:`, job.status)
           setProcessingJob(job)
           setIsLoadingJob(false)
-          if (job.status !== 'completed' && job.status !== 'failed') {
+          if (job.status !== 'completed' && job.status !== 'failed' && job.status !== 'uploaded') {
             pollProgress(initialJobId)
           }
         })
-        .catch(() => {
+        .catch((error) => {
+          console.error(`Error fetching job ${initialJobId}:`, error)
           setProcessingJob(null)
           setIsLoadingJob(false)
         })
     }
-  }, [initialJobId])
+  }, [initialJobId, pollProgress])
+
+  // Cleanup interval on unmount
+  useEffect(() => {
+    return () => {
+      if (intervalRef.current) {
+        console.log('Cleaning up progress polling interval')
+        clearInterval(intervalRef.current)
+        intervalRef.current = null
+      }
+    }
+  }, [])
 
   const startStep = async (stepIndex: number) => {
     if (!processingJob) return
@@ -148,6 +206,7 @@ export default function AudioUpload({ jobId: initialJobId }: { jobId?: string } 
     try {
       const formData = new FormData()
       formData.append('audio', file)
+      formData.append('visualMode', selectedVisualMode)
 
       const response = await fetch('/api/upload', {
         method: 'POST',
@@ -171,27 +230,6 @@ export default function AudioUpload({ jobId: initialJobId }: { jobId?: string } 
     }
   }, [])
 
-  const pollProgress = async (jobId: string) => {
-    const interval = setInterval(async () => {
-      try {
-        const response = await fetch(`/api/progress/${jobId}`)
-        const job = await response.json()
-        setProcessingJob(job)
-        
-        // Stop polling if job is completed, failed, or if any step has failed
-        const hasFailedStep = job.steps && job.steps.some((step: any) => step.status === 'failed')
-        if (job.status === 'completed' || job.status === 'failed' || hasFailedStep) {
-          clearInterval(interval)
-        }
-      } catch (error) {
-        console.error('Progress polling error:', error)
-        clearInterval(interval)
-        setProcessingJob(null)
-        alert('Progress polling failed. Please try again.')
-      }
-    }, 2000)
-  }
-
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
@@ -211,6 +249,9 @@ export default function AudioUpload({ jobId: initialJobId }: { jobId?: string } 
         <p className="text-gray-600">
           Upload your podcast audio file to generate a video with ambient visuals and subtitles
         </p>
+        <p className="text-sm text-blue-600 mt-1">
+          ⚡ Audio will be automatically trimmed to the first minute for faster processing
+        </p>
       </div>
 
       {isLoadingJob && (
@@ -221,7 +262,62 @@ export default function AudioUpload({ jobId: initialJobId }: { jobId?: string } 
       )}
 
       {!isLoadingJob && !processingJob && (
-        <div
+        <>
+          {/* Performance Mode Selector */}
+          <div className="mb-6 bg-white rounded-lg shadow-sm border p-6">
+            <h3 className="text-lg font-medium text-gray-900 mb-4">⚡ Visual Generation Performance</h3>
+            
+            <div className="space-y-3 mb-4">
+              {(Object.entries(VISUAL_PERFORMANCE_MODES) as [VisualPerformanceMode, typeof VISUAL_PERFORMANCE_MODES[VisualPerformanceMode]][]).map(([mode, config]) => (
+                <label key={mode} className="flex items-start space-x-3 p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="visualMode"
+                    value={mode}
+                    checked={selectedVisualMode === mode}
+                    onChange={(e) => setSelectedVisualMode(e.target.value as VisualPerformanceMode)}
+                    className="mt-1"
+                  />
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-2">
+                      <span className="font-medium capitalize">{mode.replace('-', ' ')}</span>
+                      {mode === 'fast' && <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">Recommended</span>}
+                      {mode === 'real-time' && <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded">Fastest</span>}
+                    </div>
+                    <p className="text-sm text-gray-600 mt-1">{config.description}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowPerformanceDetails(!showPerformanceDetails)}
+              className="text-sm text-blue-600 hover:text-blue-800 underline"
+            >
+              {showPerformanceDetails ? 'Hide' : 'Show'} performance details
+            </button>
+
+            {showPerformanceDetails && (
+              <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                <h4 className="font-medium mb-2">Performance Improvements</h4>
+                <div className="text-sm space-y-1">
+                  {Object.entries(getPerformanceComparison().improvements).map(([mode, improvement]) => (
+                    <div key={mode} className="flex items-center space-x-2">
+                      <span className="capitalize font-medium w-20">{mode.replace('-', ' ')}:</span>
+                      <span className="text-gray-600">{improvement}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  {getPerformanceComparison().oldMethod}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Upload Area */}
+          <div
           {...getRootProps()}
           className={`border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition-colors ${
             isDragActive
@@ -248,12 +344,13 @@ export default function AudioUpload({ jobId: initialJobId }: { jobId?: string } 
                   or click to select a file
                 </p>
                 <p className="text-xs text-gray-400 mt-1">
-                  Supports MP3, WAV, M4A, AAC, OGG, FLAC (max 500MB)
+                  Supports MP3, WAV, M4A, AAC, OGG, FLAC (max 500MB) • First minute only
                 </p>
               </div>
             )}
           </div>
-        </div>
+        </div>  
+        </>
       )}
 
       {!isLoadingJob && processingJob && processingJob.status && (
@@ -263,6 +360,7 @@ export default function AudioUpload({ jobId: initialJobId }: { jobId?: string } 
             <span className={`px-3 py-1 rounded-full text-sm font-medium ${
               processingJob.status === 'completed' ? 'bg-green-100 text-green-800' :
               processingJob.status === 'failed' ? 'bg-red-100 text-red-800' :
+              processingJob.status === 'uploaded' ? 'bg-yellow-100 text-yellow-800' :
               'bg-blue-100 text-blue-800'
             }`}>
               {processingJob.status.charAt(0).toUpperCase() + processingJob.status.slice(1)}
@@ -282,9 +380,32 @@ export default function AudioUpload({ jobId: initialJobId }: { jobId?: string } 
             </div>
           </div>
 
+          {processingJob.status === 'uploaded' && (
+            <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="flex items-center space-x-2">
+                <div className="text-blue-600">ℹ️</div>
+                <div>
+                  <p className="text-blue-800 font-medium">Ready to process!</p>
+                  <p className="text-blue-700 text-sm mt-1">
+                    Your audio file has been uploaded and trimmed to the first minute. 
+                    Click "Start Processing" below to generate your video.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="mb-4 flex justify-between items-center">
             <h3 className="text-lg font-semibold text-gray-900">Processing Steps</h3>
-            {processingJob.status !== 'completed' && processingJob.steps.some(step => step.status === 'pending') && (
+            {processingJob.status === 'uploaded' && (
+              <button
+                onClick={startAllSteps}
+                className="px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors text-lg font-medium"
+              >
+                🚀 Start Processing
+              </button>
+            )}
+            {processingJob.status !== 'completed' && processingJob.status !== 'uploaded' && processingJob.steps.some(step => step.status === 'pending') && (
               <button
                 onClick={startAllSteps}
                 className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm"

@@ -1,15 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { writeFile, mkdir } from 'fs/promises'
+import { writeFile, mkdir, unlink } from 'fs/promises'
 import path from 'path'
 import { v4 as uuidv4 } from 'uuid'
 import { AudioFile, ProcessingJob } from '@/types'
 import { jobs, saveJobs, processAudioFile } from '@/utils/jobs'
-import { analyzeAudio, transcribeAudio, generateSRT, convertToWav, extractWaveform } from '@/utils/audioProcessing'
+import { analyzeAudio, transcribeAudio, generateSRT, convertToWav, extractWaveform, trimAudioToFirstMinute } from '@/utils/audioProcessing'
 
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
     const file = formData.get('audio') as File
+    const visualMode = formData.get('visualMode') as string || 'fast'
     
     if (!file) {
       return NextResponse.json({ error: 'No audio file provided' }, { status: 400 })
@@ -29,11 +30,14 @@ export async function POST(request: NextRequest) {
 
     // Create uploads directory if it doesn't exist
     const uploadsDir = path.join(process.cwd(), 'uploads')
+    const tempDir = path.join(process.cwd(), 'temp')
+    
     try {
       await mkdir(uploadsDir, { recursive: true })
+      await mkdir(tempDir, { recursive: true })
     } catch (_error) {
-      // Directory might already exist
-      console.log('Upload directory already exists')
+      // Directories might already exist
+      console.log('Upload and temp directories already exist')
     }
 
     // Save file
@@ -46,11 +50,27 @@ export async function POST(request: NextRequest) {
     
     await writeFile(filePath, buffer)
 
-    // Create audio file object
+    // Trim audio to first minute
+    const trimmedFileName = `${fileId}-trimmed-${file.name}`
+    const trimmedFilePath = path.join(uploadsDir, trimmedFileName)
+    
+    try {
+      await trimAudioToFirstMinute(filePath, trimmedFilePath)
+      console.log(`Audio trimmed to first minute: ${trimmedFilePath}`)
+      
+      // Clean up original file since we only need the trimmed version
+      await unlink(filePath)
+      console.log(`Original file cleaned up: ${filePath}`)
+    } catch (error) {
+      console.error('Failed to trim audio:', error)
+      return NextResponse.json({ error: 'Failed to process audio file' }, { status: 500 })
+    }
+
+    // Create audio file object (using trimmed file)
     const audioFile: AudioFile = {
       id: fileId,
       name: file.name,
-      path: filePath,
+      path: trimmedFilePath, // Use trimmed file path
       duration: 0, // Will be determined during processing
       format: file.type,
       size: file.size,
@@ -62,9 +82,10 @@ export async function POST(request: NextRequest) {
     const processingJob: ProcessingJob = {
       id: jobId,
       audioFile,
-      status: 'pending',
+      status: 'uploaded', // Changed from 'pending' to indicate file is uploaded but processing not started
       progress: 0,
       startedAt: new Date(),
+      visualMode: visualMode as any, // Type assertion for now
       steps: [
         { name: 'Audio Analysis', status: 'pending', progress: 0 },
         { name: 'Transcription', status: 'pending', progress: 0 },
@@ -79,17 +100,7 @@ export async function POST(request: NextRequest) {
     jobs.set(jobId, processingJob)
     await saveJobs()
 
-    // Start processing in background
-    processAudioFile(jobId).catch(async error => {
-      console.error('Processing error:', error)
-      const job = jobs.get(jobId)
-      if (job) {
-        job.status = 'failed'
-        job.error = error.message
-        jobs.set(jobId, job)
-        await saveJobs()
-      }
-    })
+    // Don't start processing automatically - user must click a button to start
 
     return NextResponse.json({ 
       success: true, 
