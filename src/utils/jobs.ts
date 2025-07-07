@@ -138,6 +138,91 @@ export async function processAudioFile(jobId: string) {
   }
 }
 
+export async function processSpecificStep(jobId: string, stepIndex: number) {
+  const job = jobs.get(jobId)
+  if (!job) return false
+
+  if (stepIndex < 0 || stepIndex >= job.steps.length) return false
+  
+  const step = job.steps[stepIndex]
+  if (step.status !== 'processing') return false
+
+  try {
+    if (stepIndex === 0) { // Audio Analysis
+      const audioAnalysis = await analyzeAudio(job.audioFile.path)
+      job.audioFile.duration = audioAnalysis.duration
+      const waveformData = await extractWaveform(job.audioFile.path)
+      audioAnalysis.waveformData = waveformData
+      job.audioAnalysis = audioAnalysis
+      job.steps[0].details = {
+        duration: audioAnalysis.duration,
+        sampleRate: audioAnalysis.sampleRate,
+        channels: audioAnalysis.channels,
+        bitRate: audioAnalysis.bitRate,
+        format: audioAnalysis.format,
+      }
+      jobs.set(jobId, job)
+      await saveJobs()
+      await updateJobStep(jobId, 0, 'completed')
+    } else if (stepIndex === 1) { // Transcription
+      const tempDir = path.join(process.cwd(), 'temp')
+      const wavPath = path.join(tempDir, `${jobId}-audio.wav`)
+      await convertToWav(job.audioFile.path, wavPath)
+      const transcript = await transcribeAudio(wavPath)
+      job.steps[1].details = { segmentCount: transcript.segments.length, language: transcript.language, duration: transcript.duration }
+      const srtPath = path.join(tempDir, `${jobId}-subtitles.srt`)
+      await generateSRT(transcript, srtPath)
+      await updateJobStep(jobId, 1, 'completed')
+    } else if (stepIndex === 2) { // Music Generation
+      const tempDir = path.join(process.cwd(), 'temp')
+      const duration = job.audioFile.duration || (job.audioAnalysis?.duration ?? 180)
+      const musicPath = path.join(tempDir, `${jobId}-music.wav`)
+      await generateChillSoundtrack(Math.ceil(duration), musicPath)
+      job.steps[2].details = { info: 'Ambient music generated', musicPath }
+      jobs.set(jobId, job)
+      await saveJobs()
+      await updateJobStep(jobId, 2, 'completed')
+    } else if (stepIndex === 3) { // Visual Generation (stub)
+      await sleep(1000)
+      job.steps[3].details = { info: 'Abstract visuals generated (stub)' }
+      await updateJobStep(jobId, 3, 'completed')
+    } else if (stepIndex === 4) { // Video Assembly (stub)
+      await sleep(1000)
+      job.steps[4].details = { info: 'Video assembled (stub)' }
+      await updateJobStep(jobId, 4, 'completed')
+    } else if (stepIndex === 5) { // Metadata Generation (stub)
+      await sleep(500)
+      job.steps[5].details = { info: 'Metadata generated (stub)' }
+      await updateJobStep(jobId, 5, 'completed')
+    }
+
+    // Check if all steps are completed
+    const allCompleted = job.steps.every(s => s.status === 'completed')
+    if (allCompleted) {
+      job.status = 'completed'
+      job.progress = 100
+      job.completedAt = new Date()
+      job.outputPath = `/api/download/${jobId}`
+      jobs.set(jobId, job)
+      await saveJobs()
+    } else {
+      // Set job status back to pending if not all steps are completed
+      job.status = 'pending'
+      jobs.set(jobId, job)
+      await saveJobs()
+    }
+
+    return true
+  } catch (error: any) {
+    step.status = 'failed'
+    step.error = error instanceof Error ? error.message : 'Unknown error'
+    job.status = 'pending' // Allow retry of other steps
+    jobs.set(jobId, job)
+    await saveJobs()
+    throw error
+  }
+}
+
 // On module load, resume any jobs in processing state
 ;(async () => {
   for (const [jobId, job] of jobs.entries()) {

@@ -71,9 +71,9 @@ export default function AudioUpload({ jobId: initialJobId }: { jobId?: string } 
       fetch(`/api/progress/${initialJobId}`)
         .then(res => res.json())
         .then(job => {
-          setProcessingJob(job.error ? null : job)
+          setProcessingJob(job)
           setIsLoadingJob(false)
-          if (!job.error && job.status !== 'completed' && job.status !== 'failed') {
+          if (job.status !== 'completed' && job.status !== 'failed') {
             pollProgress(initialJobId)
           }
         })
@@ -83,6 +83,60 @@ export default function AudioUpload({ jobId: initialJobId }: { jobId?: string } 
         })
     }
   }, [initialJobId])
+
+  const startStep = async (stepIndex: number) => {
+    if (!processingJob) return
+
+    try {
+      const response = await fetch(`/api/start-step/${processingJob.id}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ stepIndex }),
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        alert(error.error || 'Failed to start step')
+        return
+      }
+
+      const result = await response.json()
+      setProcessingJob(result.job)
+      
+      // Start polling for progress
+      pollProgress(processingJob.id)
+    } catch (error) {
+      console.error('Step start error:', error)
+      alert('Failed to start step. Please try again.')
+    }
+  }
+
+  const startAllSteps = async () => {
+    if (!processingJob) return
+
+    try {
+      const response = await fetch(`/api/restart-processing/${processingJob.id}`, {
+        method: 'POST',
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        alert(error.error || 'Failed to start processing')
+        return
+      }
+
+      const result = await response.json()
+      setProcessingJob(result.job)
+      
+      // Start polling for progress
+      pollProgress(processingJob.id)
+    } catch (error) {
+      console.error('Start all error:', error)
+      alert('Failed to start processing. Please try again.')
+    }
+  }
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     const file = acceptedFiles[0]
@@ -121,14 +175,11 @@ export default function AudioUpload({ jobId: initialJobId }: { jobId?: string } 
       try {
         const response = await fetch(`/api/progress/${jobId}`)
         const job = await response.json()
-        if (job.error) {
-          clearInterval(interval)
-          setProcessingJob(null)
-          alert(job.error)
-          return
-        }
         setProcessingJob(job)
-        if (job.status === 'completed' || job.status === 'failed') {
+        
+        // Stop polling if job is completed, failed, or if any step has failed
+        const hasFailedStep = job.steps && job.steps.some((step: any) => step.status === 'failed')
+        if (job.status === 'completed' || job.status === 'failed' || hasFailedStep) {
           clearInterval(interval)
         }
       } catch (error) {
@@ -230,24 +281,101 @@ export default function AudioUpload({ jobId: initialJobId }: { jobId?: string } 
             </div>
           </div>
 
+          <div className="mb-4 flex justify-between items-center">
+            <h3 className="text-lg font-semibold text-gray-900">Processing Steps</h3>
+            {processingJob.status !== 'completed' && processingJob.steps.some(step => step.status === 'pending') && (
+              <button
+                onClick={startAllSteps}
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors text-sm"
+              >
+                Start All Remaining
+              </button>
+            )}
+          </div>
+
           <div className="space-y-3">
-            {processingJob.steps.map((step, index) => (
-              <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <div className="flex items-center space-x-3">
-                  <div className={`w-3 h-3 rounded-full ${
-                    step.status === 'completed' ? 'bg-green-500' :
-                    step.status === 'processing' ? 'bg-blue-500 animate-pulse' :
-                    step.status === 'failed' ? 'bg-red-500' :
-                    'bg-gray-300'
-                  }`}></div>
-                  <span className="text-sm font-medium text-gray-700">
-                    {step.name}
-                    {step.details && <StepExpand step={step} />}
-                  </span>
+            {processingJob.steps.map((step, index) => {
+              const canStart = step.status === 'pending' && 
+                (index === 0 || processingJob.steps[index - 1].status === 'completed')
+              
+              const stepDescriptions = [
+                'Analyze audio properties and extract waveform data',
+                'Convert speech to text with timestamps',
+                'Generate ambient background music',
+                'Create abstract visual animations',
+                'Combine audio, visuals, and subtitles into video',
+                'Generate YouTube-ready metadata and descriptions'
+              ]
+              
+              return (
+                <div key={index} className={`p-4 rounded-lg border transition-all ${
+                  step.status === 'completed' ? 'bg-green-50 border-green-200' :
+                  step.status === 'processing' ? 'bg-blue-50 border-blue-200' :
+                  step.status === 'failed' ? 'bg-red-50 border-red-200' :
+                  canStart ? 'bg-yellow-50 border-yellow-200' :
+                  'bg-gray-50 border-gray-200'
+                }`}>
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-start space-x-3 flex-1">
+                      <div className={`w-4 h-4 rounded-full mt-0.5 ${
+                        step.status === 'completed' ? 'bg-green-500' :
+                        step.status === 'processing' ? 'bg-blue-500 animate-pulse' :
+                        step.status === 'failed' ? 'bg-red-500' :
+                        canStart ? 'bg-yellow-500' :
+                        'bg-gray-300'
+                      }`}></div>
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2 mb-1">
+                          <span className="text-sm font-semibold text-gray-900">
+                            {index + 1}. {step.name}
+                          </span>
+                          {step.status === 'processing' && (
+                            <span className="text-xs text-blue-600 font-medium">Processing...</span>
+                          )}
+                          {step.status === 'completed' && (
+                            <span className="text-xs text-green-600 font-medium">✓ Complete</span>
+                          )}
+                          {step.status === 'failed' && (
+                            <span className="text-xs text-red-600 font-medium">✗ Failed</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-gray-600 mb-2">
+                          {stepDescriptions[index]}
+                        </p>
+                        {step.status === 'failed' && step.error && (
+                          <div className="mb-2 p-2 bg-red-100 border border-red-200 rounded text-xs">
+                            <div className="text-red-800 font-medium mb-1">❌ Step Failed</div>
+                            <div className="text-red-700">{step.error}</div>
+                          </div>
+                        )}
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-2">
+                            {canStart && (
+                              <button
+                                onClick={() => startStep(index)}
+                                className="px-3 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                              >
+                                Start Step
+                              </button>
+                            )}
+                            {step.details && <StepExpand step={step} />}
+                            {step.status === 'failed' && (
+                              <button
+                                onClick={() => startStep(index)}
+                                className="px-2 py-1 text-xs bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+                              >
+                                Retry Step
+                              </button>
+                            )}
+                          </div>
+                          <span className="text-xs text-gray-500 font-medium">{step.progress}%</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <span className="text-xs text-gray-500">{step.progress}%</span>
-              </div>
-            ))}
+              )
+            })}
           </div>
 
           {processingJob.status === 'completed' && processingJob.outputPath && (
@@ -260,21 +388,6 @@ export default function AudioUpload({ jobId: initialJobId }: { jobId?: string } 
               >
                 Download Video
               </a>
-            </div>
-          )}
-
-          {processingJob.status === 'failed' && (
-            <div className="mt-6 p-4 bg-red-50 rounded-lg">
-              <p className="text-red-800 font-medium mb-2">Processing failed</p>
-              <p className="text-red-600 text-sm whitespace-pre-wrap">
-                {processingJob.error || 'An unknown error occurred. Please try again.'}
-              </p>
-              <button
-                onClick={() => setProcessingJob(null)}
-                className="mt-2 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
-              >
-                Try Again
-              </button>
             </div>
           )}
 
