@@ -50,13 +50,13 @@ export async function POST(
     await saveJobs()
 
     // Process the step in background
-    processSpecificStep(jobId, stepIndex).catch(async (error: any) => {
+    processSpecificStep(jobId, stepIndex).catch(async (error: unknown) => {
       console.error('Step processing error:', error)
       const job = jobs.get(jobId)
       if (job) {
         const step = job.steps[stepIndex]
         step.status = 'failed'
-        step.error = error.message || 'Unknown error'
+        step.error = error instanceof Error ? error.message : 'Unknown error'
         job.status = 'pending' // Allow retry of other steps
         jobs.set(jobId, job)
         await saveJobs()

@@ -314,3 +314,126 @@ export async function generateAmbientWithFFmpeg(duration: number, outputPath: st
       .run();
   });
 }
+
+/**
+ * Generate abstract visuals synchronized to audio waveform
+ * Creates an MP4 video with animated particles and waveform visualization
+ */
+export async function generateAbstractVisuals(
+  audioPath: string, 
+  waveformData: number[], 
+  outputPath: string, 
+  duration: number,
+  options: {
+    width?: number
+    height?: number
+    fps?: number
+    particleCount?: number
+    colors?: string[]
+  } = {}
+): Promise<string> {
+  const {
+    width = 1920,
+    height = 1080,
+    fps = 30,
+    particleCount: _particleCount = 100,
+    colors: _colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD']
+  } = options
+
+  return new Promise((resolve, reject) => {
+    // Create a complex filter for abstract visuals using FFmpeg's lavfi filters
+    const complexFilter = [
+      // Create base color gradient background
+      `color=c=0x1a1a1a:s=${width}x${height}:d=${duration}[bg]`,
+      
+      // Create multiple particle systems with different behaviors
+      `[bg]geq=r='128+64*sin(2*PI*T/3+X/50)':g='128+64*cos(2*PI*T/4+Y/50)':b='128+64*sin(2*PI*T/2+sqrt((X-W/2)^2+(Y-H/2)^2)/30)'[particles1]`,
+      
+      // Add waveform-responsive effects
+      `[particles1]geq=r='r(X,Y)+32*${waveformData.map((v, i) => `(T>=${i*duration/waveformData.length})*${Math.floor(v*255)}`).join('+')}':g='g(X,Y)':b='b(X,Y)'[responsive]`,
+      
+      // Add flowing wave patterns
+      `[responsive]geq=r='r(X,Y)+16*sin(2*PI*(X+T*100)/200)*cos(2*PI*(Y+T*50)/150)':g='g(X,Y)+16*cos(2*PI*(X+T*80)/180)*sin(2*PI*(Y+T*60)/120)':b='b(X,Y)+16*sin(2*PI*(X+T*120)/160)*cos(2*PI*(Y+T*90)/140)'[waves]`,
+      
+      // Add central waveform visualization
+      `[waves]drawgraph=m1='${waveformData.join('|')}':fg1=0xFFFFFF:s=${width}x${height}:flags=2[final]`
+    ]
+
+    ffmpeg()
+      .input(`color=c=black:s=${width}x${height}:d=${duration}:r=${fps}`)
+      .inputFormat('lavfi')
+      .complexFilter(complexFilter)
+      .map('[final]')
+      .videoCodec('libx264')
+      .outputOptions([
+        '-pix_fmt', 'yuv420p',
+        '-preset', 'medium',
+        '-crf', '23'
+      ])
+      .format('mp4')
+      .output(outputPath)
+      .on('end', () => resolve(outputPath))
+      .on('error', (err) => {
+        console.error('Visual generation error:', err)
+        reject(err)
+      })
+      .run()
+  })
+}
+
+/**
+ * Generate simpler abstract visuals using basic FFmpeg filters (fallback)
+ */
+export async function generateSimpleVisuals(
+  duration: number,
+  outputPath: string,
+  _waveformData: number[] = [],
+  options: {
+    width?: number
+    height?: number
+    fps?: number
+  } = {}
+): Promise<string> {
+  const {
+    width = 1920,
+    height = 1080,
+    fps = 30
+  } = options
+
+  return new Promise((resolve, reject) => {
+    // Create a simpler but more reliable visual using basic FFmpeg filters
+    const filters = [
+      // Create animated gradient background
+      `mandelbrot=s=${width}x${height}:maxiter=100:rate=${fps}:outer=normalized_iteration_count`,
+      
+      // Add color cycling
+      'hue=h=t*60:s=sin(t)+1',
+      
+      // Add some blur for smoother effect
+      'gblur=sigma=2',
+      
+      // Adjust opacity and blend
+      'format=yuva420p,colorchannelmixer=aa=0.8'
+    ]
+
+    ffmpeg()
+      .input(`mandelbrot=s=${width}x${height}:maxiter=100:rate=${fps}:outer=normalized_iteration_count`)
+      .inputFormat('lavfi')
+      .videoFilters(filters)
+      .videoCodec('libx264')
+      .outputOptions([
+        '-pix_fmt', 'yuv420p',
+        '-preset', 'medium',
+        '-crf', '23',
+        `-t`, duration.toString()
+      ])
+      .format('mp4')
+      .output(outputPath)
+      .on('end', () => resolve(outputPath))
+      .on('error', (err) => {
+        console.error('Simple visual generation error:', err)
+        reject(err)
+      })
+      .run()
+  })
+}

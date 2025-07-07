@@ -37,12 +37,12 @@ export async function POST(
     await saveJobs()
 
     // Start processing in background
-    processAudioFile(jobId).catch(async (error: any) => {
+    processAudioFile(jobId).catch(async (error: unknown) => {
       console.error('Processing error:', error)
       const job = jobs.get(jobId)
       if (job) {
         job.status = 'failed'
-        job.error = error.message || 'Unknown error'
+        job.error = error instanceof Error ? error.message : 'Unknown error'
         jobs.set(jobId, job)
         await saveJobs()
       }

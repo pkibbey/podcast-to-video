@@ -1,14 +1,14 @@
 import { ProcessingJob } from '@/types'
 import { readFile, writeFile } from 'fs/promises'
+import { readFileSync } from 'fs'
 import path from 'path'
-import { analyzeAudio, transcribeAudio, generateSRT, convertToWav, extractWaveform, generateChillSoundtrack, generateChillSoundtrackFromLocal, generateAmbientWithFFmpeg } from '@/utils/audioProcessing'
-import fs from 'fs'
+import { analyzeAudio, transcribeAudio, generateSRT, convertToWav, extractWaveform, generateChillSoundtrackFromLocal, generateAbstractVisuals, generateSimpleVisuals } from '@/utils/audioProcessing'
 
 const JOBS_PATH = path.join(process.cwd(), 'jobs.json');
 
 function loadJobsSync(): Map<string, ProcessingJob> {
   try {
-    const data = JSON.parse(require('fs').readFileSync(JOBS_PATH, 'utf-8'))
+    const data = JSON.parse(readFileSync(JOBS_PATH, 'utf-8'))
     return new Map(Object.entries(data))
   } catch {
     return new Map()
@@ -117,10 +117,36 @@ export async function processAudioFile(jobId: string) {
         jobs.set(jobId, job)
         await saveJobs()
         await updateJobStep(jobId, 2, 'completed')
-      } else if (i === 3) { // Visual Generation (stub)
+      } else if (i === 3) { // Visual Generation
         await updateJobStep(jobId, 3, 'processing')
-        await sleep(1000)
-        job.steps[3].details = { info: 'Abstract visuals generated (stub)' }
+        const tempDir = path.join(process.cwd(), 'temp')
+        const duration = job.audioFile.duration || (job.audioAnalysis?.duration ?? 180)
+        const visualsPath = path.join(tempDir, `${jobId}-visuals.mp4`)
+        const waveformData = job.audioAnalysis?.waveformData || []
+        
+        try {
+          // Try advanced visual generation first
+          await generateAbstractVisuals(job.audioFile.path, waveformData, visualsPath, duration)
+          job.steps[3].details = { 
+            info: 'Abstract visuals generated with waveform synchronization', 
+            visualsPath,
+            duration,
+            resolution: '1920x1080'
+          }
+        } catch (error) {
+          console.log('Advanced visual generation failed, using simple visuals:', error)
+          // Fallback to simpler visual generation
+          await generateSimpleVisuals(duration, visualsPath, waveformData)
+          job.steps[3].details = { 
+            info: 'Simple abstract visuals generated', 
+            visualsPath,
+            duration,
+            resolution: '1920x1080'
+          }
+        }
+        
+        jobs.set(jobId, job)
+        await saveJobs()
         await updateJobStep(jobId, 3, 'completed')
       } else if (i === 4) { // Video Assembly (stub)
         await updateJobStep(jobId, 4, 'processing')
@@ -141,7 +167,7 @@ export async function processAudioFile(jobId: string) {
     job.outputPath = `/api/download/${jobId}`
     jobs.set(jobId, job)
     await saveJobs()
-  } catch (error: any) {
+  } catch (error: unknown) {
     job.status = 'failed'
     job.error = error instanceof Error ? error.message : 'Unknown error'
     jobs.set(jobId, job)
@@ -193,9 +219,35 @@ export async function processSpecificStep(jobId: string, stepIndex: number) {
       jobs.set(jobId, job)
       await saveJobs()
       await updateJobStep(jobId, 2, 'completed')
-    } else if (stepIndex === 3) { // Visual Generation (stub)
-      await sleep(1000)
-      job.steps[3].details = { info: 'Abstract visuals generated (stub)' }
+    } else if (stepIndex === 3) { // Visual Generation
+      const tempDir = path.join(process.cwd(), 'temp')
+      const duration = job.audioFile.duration || (job.audioAnalysis?.duration ?? 180)
+      const visualsPath = path.join(tempDir, `${jobId}-visuals.mp4`)
+      const waveformData = job.audioAnalysis?.waveformData || []
+      
+      try {
+        // Try advanced visual generation first
+        await generateAbstractVisuals(job.audioFile.path, waveformData, visualsPath, duration)
+        job.steps[3].details = { 
+          info: 'Abstract visuals generated with waveform synchronization', 
+          visualsPath,
+          duration,
+          resolution: '1920x1080'
+        }
+      } catch (error) {
+        console.log('Advanced visual generation failed, using simple visuals:', error)
+        // Fallback to simpler visual generation
+        await generateSimpleVisuals(duration, visualsPath, waveformData)
+        job.steps[3].details = { 
+          info: 'Simple abstract visuals generated', 
+          visualsPath,
+          duration,
+          resolution: '1920x1080'
+        }
+      }
+      
+      jobs.set(jobId, job)
+      await saveJobs()
       await updateJobStep(jobId, 3, 'completed')
     } else if (stepIndex === 4) { // Video Assembly (stub)
       await sleep(1000)
@@ -224,7 +276,7 @@ export async function processSpecificStep(jobId: string, stepIndex: number) {
     }
 
     return true
-  } catch (error: any) {
+  } catch (error: unknown) {
     step.status = 'failed'
     step.error = error instanceof Error ? error.message : 'Unknown error'
     job.status = 'pending' // Allow retry of other steps

@@ -3,8 +3,9 @@
 import { useState, useCallback, useEffect } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { ProcessingJob } from '@/types'
+import { AudioAnalysis } from '@/utils/audioProcessing';
 
-function AudioAnalysisDetails({ analysis }: { analysis: any }) {
+function AudioAnalysisDetails({ analysis }: { analysis: AudioAnalysis | undefined }) {
   if (!analysis) return null;
   // Heuristic: flag as suspicious if duration is 0, sampleRate < 4000, or channels < 1
   const suspicious = !analysis.duration || analysis.sampleRate < 4000 || analysis.channels < 1;
