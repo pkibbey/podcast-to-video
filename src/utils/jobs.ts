@@ -1,7 +1,7 @@
 import { ProcessingJob } from '@/types'
 import { readFile, writeFile } from 'fs/promises'
 import path from 'path'
-import { analyzeAudio, transcribeAudio, generateSRT, convertToWav, extractWaveform, generateChillSoundtrack } from '@/utils/audioProcessing'
+import { analyzeAudio, transcribeAudio, generateSRT, convertToWav, extractWaveform, generateChillSoundtrack, generateChillSoundtrackFromLocal, generateAmbientWithFFmpeg } from '@/utils/audioProcessing'
 import fs from 'fs'
 
 const JOBS_PATH = path.join(process.cwd(), 'jobs.json');
@@ -36,13 +36,24 @@ export async function updateJobStep(jobId: string, stepIndex: number, status: 'p
   const job = jobs.get(jobId)
   if (!job) return
 
-  job.steps[stepIndex].status = status
-  job.steps[stepIndex].progress = status === 'completed' ? 100 : status === 'processing' ? 50 : 0
+  const step = job.steps[stepIndex]
+  step.status = status
+  step.progress = status === 'completed' ? 100 : status === 'processing' ? 50 : 0
+  
   if (status === 'processing') {
-    job.steps[stepIndex].startedAt = new Date()
+    step.startedAt = new Date()
+    // Clear any previous error when starting/retrying
+    if (step.error) {
+      delete step.error
+    }
   } else if (status === 'completed') {
-    job.steps[stepIndex].completedAt = new Date()
+    step.completedAt = new Date()
+    // Clear any error on successful completion
+    if (step.error) {
+      delete step.error
+    }
   }
+  
   // Update overall progress
   const completedSteps = job.steps.filter(step => step.status === 'completed').length
   job.progress = Math.round((completedSteps / job.steps.length) * 100)
@@ -101,8 +112,8 @@ export async function processAudioFile(jobId: string) {
         const tempDir = path.join(process.cwd(), 'temp')
         const duration = job.audioFile.duration || (job.audioAnalysis?.duration ?? 180)
         const musicPath = path.join(tempDir, `${jobId}-music.wav`)
-        await generateChillSoundtrack(Math.ceil(duration), musicPath)
-        job.steps[2].details = { info: 'Ambient music generated', musicPath }
+        await generateChillSoundtrackFromLocal(Math.ceil(duration), musicPath)
+        job.steps[2].details = { info: 'Ambient music generated from local files', musicPath }
         jobs.set(jobId, job)
         await saveJobs()
         await updateJobStep(jobId, 2, 'completed')
@@ -177,8 +188,8 @@ export async function processSpecificStep(jobId: string, stepIndex: number) {
       const tempDir = path.join(process.cwd(), 'temp')
       const duration = job.audioFile.duration || (job.audioAnalysis?.duration ?? 180)
       const musicPath = path.join(tempDir, `${jobId}-music.wav`)
-      await generateChillSoundtrack(Math.ceil(duration), musicPath)
-      job.steps[2].details = { info: 'Ambient music generated', musicPath }
+      await generateChillSoundtrackFromLocal(Math.ceil(duration), musicPath)
+      job.steps[2].details = { info: 'Ambient music generated from local files', musicPath }
       jobs.set(jobId, job)
       await saveJobs()
       await updateJobStep(jobId, 2, 'completed')

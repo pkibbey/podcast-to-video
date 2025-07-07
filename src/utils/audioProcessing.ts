@@ -242,26 +242,75 @@ export async function generateChillSoundtrack(duration: number, outputPath: stri
  * @returns outputPath
  */
 export async function generateChillSoundtrackFromLocal(duration: number, outputPath: string, musicDir: string = path.join(process.cwd(), 'assets', 'music')): Promise<string> {
-  // Find all music files in the directory
-  const files = (await import('fs/promises')).readdir(musicDir);
-  const musicFiles = (await files).filter(f => f.endsWith('.mp3') || f.endsWith('.wav') || f.endsWith('.aac') || f.endsWith('.flac') || f.endsWith('.ogg'));
-  if (musicFiles.length === 0) throw new Error('No music files found in ' + musicDir);
-  // Pick a random file
-  const musicFile = musicFiles[Math.floor(Math.random() * musicFiles.length)];
-  const inputPath = path.join(musicDir, musicFile);
-  // Use FFmpeg to loop and trim the music to the desired duration
+  try {
+    // Find all music files in the directory
+    const files = (await import('fs/promises')).readdir(musicDir);
+    const musicFiles = (await files).filter(f => f.endsWith('.mp3') || f.endsWith('.wav') || f.endsWith('.aac') || f.endsWith('.flac') || f.endsWith('.ogg'));
+    
+    if (musicFiles.length === 0) {
+      console.log('No music files found, generating ambient music with FFmpeg...');
+      return generateAmbientWithFFmpeg(duration, outputPath);
+    }
+    
+    // Pick a random file
+    const musicFile = musicFiles[Math.floor(Math.random() * musicFiles.length)];
+    const inputPath = path.join(musicDir, musicFile);
+    
+    // Use FFmpeg to loop and trim the music to the desired duration
+    return new Promise((resolve, reject) => {
+      ffmpeg()
+        .input(inputPath)
+        .inputOptions(['-stream_loop', '-1']) // infinite loop
+        .audioCodec('pcm_s16le')
+        .audioChannels(2)
+        .audioFrequency(44100)
+        .format('wav')
+        .duration(duration)
+        .output(outputPath)
+        .on('end', () => resolve(outputPath))
+        .on('error', reject)
+        .run();
+    });
+  } catch (error) {
+    console.log('Error reading music directory, falling back to FFmpeg generation:', error);
+    return generateAmbientWithFFmpeg(duration, outputPath);
+  }
+}
+
+/**
+ * Generate ambient music using FFmpeg's built-in synthesizers (no external dependencies)
+ * @param duration Duration in seconds
+ * @param outputPath Path to save the generated soundtrack (WAV)
+ * @returns outputPath
+ */
+export async function generateAmbientWithFFmpeg(duration: number, outputPath: string): Promise<string> {
   return new Promise((resolve, reject) => {
+    // Create a simple ambient track using brown noise and sine wave
+    // This is more reliable than complex filter chains
     ffmpeg()
-      .input(inputPath)
-      .inputOptions(['-stream_loop', '-1']) // infinite loop
+      .input(`anoisesrc=colour=brown:sample_rate=44100:duration=${duration}`)
+      .inputFormat('lavfi')
+      .input(`sine=frequency=220:duration=${duration}`)
+      .inputFormat('lavfi')
+      .input(`sine=frequency=330:duration=${duration}`)
+      .inputFormat('lavfi')
+      .complexFilter([
+        '[0]volume=0.1,highpass=f=80,lowpass=f=8000[noise]',
+        '[1]volume=0.05[sine1]',
+        '[2]volume=0.03[sine2]',
+        '[noise][sine1][sine2]amix=inputs=3:duration=first[out]'
+      ])
+      .map('[out]')
       .audioCodec('pcm_s16le')
       .audioChannels(2)
       .audioFrequency(44100)
       .format('wav')
-      .duration(duration)
       .output(outputPath)
       .on('end', () => resolve(outputPath))
-      .on('error', reject)
+      .on('error', (err) => {
+        console.error('FFmpeg ambient generation error:', err);
+        reject(err);
+      })
       .run();
   });
 }

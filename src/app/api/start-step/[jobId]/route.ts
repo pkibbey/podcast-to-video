@@ -42,6 +42,10 @@ export async function POST(
     job.status = 'processing'
     step.status = 'processing'
     step.startedAt = new Date()
+    // Clear any previous error when retrying
+    if (step.error) {
+      delete step.error
+    }
     jobs.set(jobId, job)
     await saveJobs()
 

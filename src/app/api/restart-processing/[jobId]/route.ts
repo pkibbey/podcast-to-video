@@ -23,6 +23,16 @@ export async function POST(
 
     // Start processing from where it left off
     job.status = 'processing'
+    // Clear any previous job-level error when restarting
+    if (job.error) {
+      delete job.error
+    }
+    // Clear errors from any failed steps that will be retried
+    job.steps.forEach(step => {
+      if (step.status === 'failed' && step.error) {
+        delete step.error
+      }
+    })
     jobs.set(jobId, job)
     await saveJobs()
 
