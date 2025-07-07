@@ -31,6 +31,7 @@ export interface ProcessingStep {
   startedAt?: Date;
   completedAt?: Date;
   error?: string;
+  details?: any;
 }
 
 export interface TranscriptionSegment {

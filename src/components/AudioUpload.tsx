@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { ProcessingJob } from '@/types'
 
@@ -27,7 +27,20 @@ function AudioAnalysisDetails({ analysis }: { analysis: any }) {
   )
 }
 
-function AudioAnalysisExpand({ analysis }: { analysis: any }) {
+function StepDetails({ step }: { step: any }) {
+  if (!step.details) return null;
+  if (step.name === 'Audio Analysis') {
+    return <AudioAnalysisDetails analysis={step.details} />;
+  }
+  return (
+    <div className="mt-2 p-4 border rounded-lg bg-gray-50 text-sm">
+      <div className="font-semibold mb-2">{step.name} Details</div>
+      <pre className="whitespace-pre-wrap">{JSON.stringify(step.details, null, 2)}</pre>
+    </div>
+  );
+}
+
+function StepExpand({ step }: { step: any }) {
   const [open, setOpen] = useState(false)
   return (
     <>
@@ -38,14 +51,35 @@ function AudioAnalysisExpand({ analysis }: { analysis: any }) {
       >
         {open ? 'Hide details' : 'Show details'}
       </button>
-      {open && <AudioAnalysisDetails analysis={analysis} />}
+      {open && <StepDetails step={step} />}
     </>
   )
 }
 
-export default function AudioUpload() {
+export default function AudioUpload({ jobId: initialJobId }: { jobId?: string } = {}) {
   const [processingJob, setProcessingJob] = useState<ProcessingJob | null>(null)
   const [isUploading, setIsUploading] = useState(false)
+  const [isLoadingJob, setIsLoadingJob] = useState(!!initialJobId)
+
+  // If jobId is provided, fetch job on mount
+  useEffect(() => {
+    if (initialJobId) {
+      setIsLoadingJob(true)
+      fetch(`/api/progress/${initialJobId}`)
+        .then(res => res.json())
+        .then(job => {
+          setProcessingJob(job.error ? null : job)
+          setIsLoadingJob(false)
+          if (!job.error && job.status !== 'completed' && job.status !== 'failed') {
+            pollProgress(initialJobId)
+          }
+        })
+        .catch(() => {
+          setProcessingJob(null)
+          setIsLoadingJob(false)
+        })
+    }
+  }, [initialJobId])
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     const file = acceptedFiles[0]
@@ -124,7 +158,14 @@ export default function AudioUpload() {
         </p>
       </div>
 
-      {!processingJob && (
+      {isLoadingJob && (
+        <div className="flex flex-col items-center justify-center py-24">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+          <p className="text-lg text-gray-700">Loading job...</p>
+        </div>
+      )}
+
+      {!isLoadingJob && !processingJob && (
         <div
           {...getRootProps()}
           className={`border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition-colors ${
@@ -160,7 +201,7 @@ export default function AudioUpload() {
         </div>
       )}
 
-      {processingJob && processingJob.status && (
+      {!isLoadingJob && processingJob && processingJob.status && (
         <div className="bg-white rounded-lg shadow-lg p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-semibold text-gray-900">Processing</h2>
@@ -198,9 +239,7 @@ export default function AudioUpload() {
                   }`}></div>
                   <span className="text-sm font-medium text-gray-700">
                     {step.name}
-                    {step.name === 'Audio Analysis' && processingJob.audioAnalysis && (
-                      <AudioAnalysisExpand analysis={processingJob.audioAnalysis} />
-                    )}
+                    {step.details && <StepExpand step={step} />}
                   </span>
                 </div>
                 <span className="text-xs text-gray-500">{step.progress}%</span>
