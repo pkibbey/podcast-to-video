@@ -1,24 +1,24 @@
 {
-  "b17668bf-73ca-4dd6-999a-72665e6c76e7": {
-    "id": "b17668bf-73ca-4dd6-999a-72665e6c76e7",
+  "7cc2d8d3-f786-4c9f-9cc1-c177c8c75ea8": {
+    "id": "7cc2d8d3-f786-4c9f-9cc1-c177c8c75ea8",
     "audioFile": {
-      "id": "97aff006-6b4c-4d9d-9ef7-26e5b54e9637",
+      "id": "3985fff7-ee48-497a-9063-363a058abb0e",
       "name": "Person-Centered Therapy_ History, Impact, and Future Trajectory.wav",
-      "path": "/Users/phineas/Sites/podcast-to-video/uploads/97aff006-6b4c-4d9d-9ef7-26e5b54e9637-Person-Centered Therapy_ History, Impact, and Future Trajectory.wav",
+      "path": "/Users/phineas/Sites/podcast-to-video/uploads/3985fff7-ee48-497a-9063-363a058abb0e-Person-Centered Therapy_ History, Impact, and Future Trajectory.wav",
       "duration": 2081.44,
       "format": "audio/wav",
       "size": 99909164,
-      "uploadedAt": "2025-07-07T00:04:31.385Z"
+      "uploadedAt": "2025-07-07T06:04:12.684Z"
     },
-    "status": "completed",
-    "progress": 100,
-    "startedAt": "2025-07-07T00:04:31.385Z",
+    "status": "failed",
+    "progress": 33,
+    "startedAt": "2025-07-07T06:04:12.684Z",
     "steps": [
       {
         "name": "Audio Analysis",
         "status": "completed",
         "progress": 100,
-        "startedAt": "2025-07-07T00:04:31.424Z",
+        "startedAt": "2025-07-07T06:04:12.691Z",
         "details": {
           "duration": 2081.44,
           "sampleRate": 24000,
@@ -26,59 +26,40 @@
           "bitRate": 384000,
           "format": "pcm_s16le"
         },
-        "completedAt": "2025-07-07T00:04:37.848Z"
+        "completedAt": "2025-07-07T06:04:14.584Z"
       },
       {
         "name": "Transcription",
         "status": "completed",
         "progress": 100,
-        "startedAt": "2025-07-07T03:12:20.180Z",
+        "startedAt": "2025-07-07T06:04:14.584Z",
         "details": {
           "segmentCount": 991,
           "language": "en",
           "duration": 2081.1
         },
-        "completedAt": "2025-07-07T03:33:02.349Z"
+        "completedAt": "2025-07-07T06:13:08.000Z"
       },
       {
         "name": "Music Generation",
-        "status": "completed",
-        "progress": 100,
-        "startedAt": "2025-07-07T03:33:02.349Z",
-        "details": {
-          "info": "Ambient music generated (stub)"
-        },
-        "completedAt": "2025-07-07T03:33:03.351Z"
+        "status": "pending",
+        "progress": 50,
+        "startedAt": "2025-07-07T08:29:08.766Z"
       },
       {
         "name": "Visual Generation",
-        "status": "completed",
-        "progress": 100,
-        "startedAt": "2025-07-07T03:33:03.352Z",
-        "details": {
-          "info": "Abstract visuals generated (stub)"
-        },
-        "completedAt": "2025-07-07T03:33:04.354Z"
+        "status": "pending",
+        "progress": 0
       },
       {
         "name": "Video Assembly",
-        "status": "completed",
-        "progress": 100,
-        "startedAt": "2025-07-07T03:33:04.356Z",
-        "details": {
-          "info": "Video assembled (stub)"
-        },
-        "completedAt": "2025-07-07T03:33:05.358Z"
+        "status": "pending",
+        "progress": 0
       },
       {
         "name": "Metadata Generation",
-        "status": "completed",
-        "progress": 100,
-        "startedAt": "2025-07-07T03:33:05.359Z",
-        "details": {
-          "info": "Metadata generated (stub)"
-        },
-        "completedAt": "2025-07-07T03:33:05.862Z"
+        "status": "pending",
+        "progress": 0
       }
     ],
     "audioAnalysis": {
@@ -1090,7 +1071,6 @@
         0
       ]
     },
-    "completedAt": "2025-07-07T03:33:05.864Z",
-    "outputPath": "/api/download/b17668bf-73ca-4dd6-999a-72665e6c76e7"
+    "error": "MusicGen failed: /Users/phineas/Sites/podcast-to-video/venv/bin/python: No module named musicgen\n"
   }
 }

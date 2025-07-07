@@ -1,7 +1,7 @@
 import { ProcessingJob } from '@/types'
 import { readFile, writeFile } from 'fs/promises'
 import path from 'path'
-import { analyzeAudio, transcribeAudio, generateSRT, convertToWav, extractWaveform } from '@/utils/audioProcessing'
+import { analyzeAudio, transcribeAudio, generateSRT, convertToWav, extractWaveform, generateChillSoundtrack } from '@/utils/audioProcessing'
 import fs from 'fs'
 
 const JOBS_PATH = path.join(process.cwd(), 'jobs.json');
@@ -96,10 +96,15 @@ export async function processAudioFile(jobId: string) {
         const srtPath = path.join(tempDir, `${jobId}-subtitles.srt`)
         await generateSRT(transcript, srtPath)
         await updateJobStep(jobId, 1, 'completed')
-      } else if (i === 2) { // Music Generation (stub)
+      } else if (i === 2) { // Music Generation (real)
         await updateJobStep(jobId, 2, 'processing')
-        await sleep(1000)
-        job.steps[2].details = { info: 'Ambient music generated (stub)' }
+        const tempDir = path.join(process.cwd(), 'temp')
+        const duration = job.audioFile.duration || (job.audioAnalysis?.duration ?? 180)
+        const musicPath = path.join(tempDir, `${jobId}-music.wav`)
+        await generateChillSoundtrack(Math.ceil(duration), musicPath)
+        job.steps[2].details = { info: 'Ambient music generated', musicPath }
+        jobs.set(jobId, job)
+        await saveJobs()
         await updateJobStep(jobId, 2, 'completed')
       } else if (i === 3) { // Visual Generation (stub)
         await updateJobStep(jobId, 3, 'processing')

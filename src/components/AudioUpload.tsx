@@ -58,8 +58,11 @@ function StepExpand({ step }: { step: any }) {
 
 export default function AudioUpload({ jobId: initialJobId }: { jobId?: string } = {}) {
   const [processingJob, setProcessingJob] = useState<ProcessingJob | null>(null)
+  console.log('processingJob: ', processingJob)
   const [isUploading, setIsUploading] = useState(false)
+  console.log('isUploading: ', isUploading)
   const [isLoadingJob, setIsLoadingJob] = useState(!!initialJobId)
+  console.log('isLoadingJob: ', isLoadingJob)
 
   // If jobId is provided, fetch job on mount
   useEffect(() => {
@@ -263,7 +266,9 @@ export default function AudioUpload({ jobId: initialJobId }: { jobId?: string } 
           {processingJob.status === 'failed' && (
             <div className="mt-6 p-4 bg-red-50 rounded-lg">
               <p className="text-red-800 font-medium mb-2">Processing failed</p>
-              <p className="text-red-600 text-sm">{processingJob.error}</p>
+              <p className="text-red-600 text-sm whitespace-pre-wrap">
+                {processingJob.error || 'An unknown error occurred. Please try again.'}
+              </p>
               <button
                 onClick={() => setProcessingJob(null)}
                 className="mt-2 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"

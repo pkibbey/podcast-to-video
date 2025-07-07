@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "source ./venv/bin/activate && next dev --turbopack",
+    "venv": "source ./venv/bin/activate",
     "dev:venv": "source ./venv/bin/activate && next dev --turbopack",
     "start": "source ./venv/bin/activate && next start",
     "build": "next build",

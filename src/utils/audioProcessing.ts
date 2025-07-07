@@ -199,3 +199,69 @@ function formatSRTTime(seconds: number): string {
   
   return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')},${milliseconds.toString().padStart(3, '0')}`
 }
+
+/**
+ * Generate a chill ambient soundtrack using local MusicGen CLI
+ * @param duration Duration in seconds
+ * @param outputPath Path to save the generated soundtrack (WAV)
+ * @returns outputPath
+ */
+export async function generateChillSoundtrack(duration: number, outputPath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    // Example CLI: python -m musicgen --prompt "chill ambient music" --duration 180 --output output.wav
+    const prompt = 'chill ambient music';
+    const args = [
+      '-m', 'musicgen',
+      '--prompt', prompt,
+      '--duration', duration.toString(),
+      '--output', outputPath
+    ];
+    const musicgen = spawn('python', args);
+    let stderr = '';
+    musicgen.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+    musicgen.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error('MusicGen failed: ' + stderr));
+      } else {
+        resolve(outputPath);
+      }
+    });
+    musicgen.on('error', (err) => {
+      reject(err);
+    });
+  });
+}
+
+/**
+ * Generate a chill ambient soundtrack by looping/trimming a local music file
+ * @param duration Duration in seconds
+ * @param outputPath Path to save the generated soundtrack (WAV)
+ * @param musicDir Directory containing chill music tracks
+ * @returns outputPath
+ */
+export async function generateChillSoundtrackFromLocal(duration: number, outputPath: string, musicDir: string = path.join(process.cwd(), 'assets', 'music')): Promise<string> {
+  // Find all music files in the directory
+  const files = (await import('fs/promises')).readdir(musicDir);
+  const musicFiles = (await files).filter(f => f.endsWith('.mp3') || f.endsWith('.wav') || f.endsWith('.aac') || f.endsWith('.flac') || f.endsWith('.ogg'));
+  if (musicFiles.length === 0) throw new Error('No music files found in ' + musicDir);
+  // Pick a random file
+  const musicFile = musicFiles[Math.floor(Math.random() * musicFiles.length)];
+  const inputPath = path.join(musicDir, musicFile);
+  // Use FFmpeg to loop and trim the music to the desired duration
+  return new Promise((resolve, reject) => {
+    ffmpeg()
+      .input(inputPath)
+      .inputOptions(['-stream_loop', '-1']) // infinite loop
+      .audioCodec('pcm_s16le')
+      .audioChannels(2)
+      .audioFrequency(44100)
+      .format('wav')
+      .duration(duration)
+      .output(outputPath)
+      .on('end', () => resolve(outputPath))
+      .on('error', reject)
+      .run();
+  });
+}
