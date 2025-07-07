@@ -22,6 +22,8 @@ export interface ProcessingJob {
   error?: string;
   steps: ProcessingStep[];
   audioAnalysis?: AudioAnalysis;
+  transcript?: Transcript;
+  metadata?: VideoMetadata;
 }
 
 export interface ProcessingStep {
@@ -51,7 +53,8 @@ export interface VideoMetadata {
   title: string;
   description: string;
   tags: string[];
-  thumbnail?: string;
+  chapters: Array<{ time: number; title: string }>;
+  thumbnail: string;
   duration: number;
   resolution: {
     width: number;

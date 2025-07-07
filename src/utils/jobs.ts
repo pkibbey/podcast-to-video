@@ -1,8 +1,8 @@
-import { ProcessingJob } from '@/types'
+import { ProcessingJob, TranscriptionSegment } from '@/types'
 import { readFile, writeFile } from 'fs/promises'
 import { readFileSync } from 'fs'
 import path from 'path'
-import { analyzeAudio, transcribeAudio, generateSRT, convertToWav, extractWaveform, generateChillSoundtrackFromLocal, generateAbstractVisuals, generateSimpleVisuals } from '@/utils/audioProcessing'
+import { analyzeAudio, transcribeAudio, generateSRT, convertToWav, extractWaveform, generateChillSoundtrackFromLocal, generateAbstractVisuals, generateSimpleVisuals, assembleVideo, combineAudioWithDucking, generateYouTubeMetadata, saveMetadataToFile } from '@/utils/audioProcessing'
 
 const JOBS_PATH = path.join(process.cwd(), 'jobs.json');
 
@@ -61,10 +61,6 @@ export async function updateJobStep(jobId: string, stepIndex: number, status: 'p
   await saveJobs()
 }
 
-function sleep(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms))
-}
-
 export async function processAudioFile(jobId: string) {
   const job = jobs.get(jobId)
   if (!job) return
@@ -103,9 +99,15 @@ export async function processAudioFile(jobId: string) {
         const wavPath = path.join(tempDir, `${jobId}-audio.wav`)
         await convertToWav(job.audioFile.path, wavPath)
         const transcript = await transcribeAudio(wavPath)
+        
+        // Store transcript in job for later use in metadata generation
+        job.transcript = transcript
+        
         job.steps[1].details = { segmentCount: transcript.segments.length, language: transcript.language, duration: transcript.duration }
         const srtPath = path.join(tempDir, `${jobId}-subtitles.srt`)
         await generateSRT(transcript, srtPath)
+        jobs.set(jobId, job)
+        await saveJobs()
         await updateJobStep(jobId, 1, 'completed')
       } else if (i === 2) { // Music Generation (real)
         await updateJobStep(jobId, 2, 'processing')
@@ -148,16 +150,162 @@ export async function processAudioFile(jobId: string) {
         jobs.set(jobId, job)
         await saveJobs()
         await updateJobStep(jobId, 3, 'completed')
-      } else if (i === 4) { // Video Assembly (stub)
+      } else if (i === 4) { // Video Assembly
         await updateJobStep(jobId, 4, 'processing')
-        await sleep(1000)
-        job.steps[4].details = { info: 'Video assembled (stub)' }
-        await updateJobStep(jobId, 4, 'completed')
-      } else if (i === 5) { // Metadata Generation (stub)
+        const tempDir = path.join(process.cwd(), 'temp')
+        const duration = job.audioFile.duration || (job.audioAnalysis?.duration ?? 180)
+        
+        // Check if required files exist
+        const visualsPath = path.join(tempDir, `${jobId}-visuals.mp4`)
+        const musicPath = path.join(tempDir, `${jobId}-music.wav`)
+        const subtitlesPath = path.join(tempDir, `${jobId}-subtitles.srt`)
+        const finalVideoPath = path.join(tempDir, `${jobId}-final.mp4`)
+        const mixedAudioPath = path.join(tempDir, `${jobId}-mixed-audio.wav`)
+        
+        try {
+          // First combine the original audio with background music using ducking
+          console.log('Combining audio with background music...')
+          await combineAudioWithDucking(job.audioFile.path, musicPath, mixedAudioPath, {
+            musicVolume: 0.15,
+            duckingThreshold: -25,
+            duckingRatio: 3,
+            attackTime: 0.2,
+            releaseTime: 1.0
+          })
+          
+          // Then assemble the final video with mixed audio, visuals, and subtitles
+          console.log('Assembling final video...')
+          await assembleVideo(mixedAudioPath, visualsPath, subtitlesPath, finalVideoPath, {
+            width: 1920,
+            height: 1080,
+            fps: 30,
+            bitrate: '5000k',
+            preset: 'medium',
+            crf: 20
+          })
+          
+          job.steps[4].details = { 
+            info: 'Video assembled with audio ducking and subtitles', 
+            finalVideoPath,
+            mixedAudioPath,
+            duration,
+            resolution: '1920x1080',
+            bitrate: '5000k'
+          }
+          
+          jobs.set(jobId, job)
+          await saveJobs()
+          await updateJobStep(jobId, 4, 'completed')
+        } catch (error) {
+          console.error('Video assembly failed:', error)
+          // Fallback: simple assembly without ducking
+          try {
+            console.log('Trying simple video assembly without ducking...')
+            await assembleVideo(job.audioFile.path, visualsPath, subtitlesPath, finalVideoPath, {
+              width: 1920,
+              height: 1080,
+              fps: 30,
+              bitrate: '4000k'
+            })
+            
+            job.steps[4].details = { 
+              info: 'Video assembled (simple mode, no audio ducking)', 
+              finalVideoPath,
+              duration,
+              resolution: '1920x1080',
+              bitrate: '4000k'
+            }
+            
+            jobs.set(jobId, job)
+            await saveJobs()
+            await updateJobStep(jobId, 4, 'completed')
+          } catch (fallbackError) {
+            console.error('Simple video assembly also failed:', fallbackError)
+            throw fallbackError
+          }
+        }
+      } else if (i === 5) { // Metadata Generation
         await updateJobStep(jobId, 5, 'processing')
-        await sleep(500)
-        job.steps[5].details = { info: 'Metadata generated (stub)' }
-        await updateJobStep(jobId, 5, 'completed')
+        const tempDir = path.join(process.cwd(), 'temp')
+        const duration = job.audioFile.duration || (job.audioAnalysis?.duration ?? 180)
+        
+        try {
+          // Load transcript if not already in job object
+          await loadTranscriptIfNeeded(jobId, job)
+          
+          // Generate YouTube metadata from transcript
+          if (job.transcript) {
+            console.log('Generating YouTube metadata from transcript...')
+            const metadata = await generateYouTubeMetadata(
+              job.transcript,
+              job.audioFile.name,
+              duration,
+              {
+                maxTitleLength: 100,
+                maxDescriptionLength: 5000,
+                maxTags: 15
+              }
+            )
+            
+            // Add resolution and duration info
+            const completeMetadata = {
+              ...metadata,
+              duration,
+              resolution: {
+                width: 1920,
+                height: 1080
+              }
+            }
+            
+            // Store metadata in job
+            job.metadata = completeMetadata
+            
+            // Save metadata to file
+            const metadataPath = path.join(tempDir, `${jobId}-metadata.json`)
+            await saveMetadataToFile(completeMetadata, metadataPath)
+            
+            job.steps[5].details = { 
+              info: 'YouTube metadata generated with AI analysis',
+              metadataPath,
+              title: metadata.title,
+              tags: metadata.tags.length,
+              chapters: metadata.chapters.length,
+              descriptionLength: metadata.description.length
+            }
+          } else {
+            // Fallback metadata generation without transcript
+            console.log('Generating basic metadata (no transcript available)...')
+            const basicMetadata = {
+              title: job.audioFile.name.replace(/\.[^/.]+$/, ''),
+              description: `Podcast episode converted to video\n\nDuration: ${Math.floor(duration/60)}:${Math.floor(duration%60).toString().padStart(2,'0')}\n\nThis video was automatically generated from audio content.`,
+              tags: ['podcast', 'audio', 'video', 'education'],
+              chapters: [],
+              thumbnail: 'auto-generated',
+              duration,
+              resolution: { width: 1920, height: 1080 }
+            }
+            
+            job.metadata = basicMetadata
+            
+            const metadataPath = path.join(tempDir, `${jobId}-metadata.json`)
+            await saveMetadataToFile(basicMetadata, metadataPath)
+            
+            job.steps[5].details = { 
+              info: 'Basic metadata generated (no transcript available)',
+              metadataPath,
+              title: basicMetadata.title,
+              tags: basicMetadata.tags.length,
+              chapters: 0
+            }
+          }
+          
+          jobs.set(jobId, job)
+          await saveJobs()
+          await updateJobStep(jobId, 5, 'completed')
+        } catch (error) {
+          console.error('Metadata generation failed:', error)
+          throw error
+        }
       }
     }
     // Complete job
@@ -206,9 +354,15 @@ export async function processSpecificStep(jobId: string, stepIndex: number) {
       const wavPath = path.join(tempDir, `${jobId}-audio.wav`)
       await convertToWav(job.audioFile.path, wavPath)
       const transcript = await transcribeAudio(wavPath)
+      
+      // Store transcript in job for later use in metadata generation
+      job.transcript = transcript
+      
       job.steps[1].details = { segmentCount: transcript.segments.length, language: transcript.language, duration: transcript.duration }
       const srtPath = path.join(tempDir, `${jobId}-subtitles.srt`)
       await generateSRT(transcript, srtPath)
+      jobs.set(jobId, job)
+      await saveJobs()
       await updateJobStep(jobId, 1, 'completed')
     } else if (stepIndex === 2) { // Music Generation
       const tempDir = path.join(process.cwd(), 'temp')
@@ -249,14 +403,160 @@ export async function processSpecificStep(jobId: string, stepIndex: number) {
       jobs.set(jobId, job)
       await saveJobs()
       await updateJobStep(jobId, 3, 'completed')
-    } else if (stepIndex === 4) { // Video Assembly (stub)
-      await sleep(1000)
-      job.steps[4].details = { info: 'Video assembled (stub)' }
-      await updateJobStep(jobId, 4, 'completed')
-    } else if (stepIndex === 5) { // Metadata Generation (stub)
-      await sleep(500)
-      job.steps[5].details = { info: 'Metadata generated (stub)' }
-      await updateJobStep(jobId, 5, 'completed')
+    } else if (stepIndex === 4) { // Video Assembly
+      const tempDir = path.join(process.cwd(), 'temp')
+      const duration = job.audioFile.duration || (job.audioAnalysis?.duration ?? 180)
+      
+      // Check if required files exist
+      const visualsPath = path.join(tempDir, `${jobId}-visuals.mp4`)
+      const musicPath = path.join(tempDir, `${jobId}-music.wav`)
+      const subtitlesPath = path.join(tempDir, `${jobId}-subtitles.srt`)
+      const finalVideoPath = path.join(tempDir, `${jobId}-final.mp4`)
+      const mixedAudioPath = path.join(tempDir, `${jobId}-mixed-audio.wav`)
+      
+      try {
+        // First combine the original audio with background music using ducking
+        console.log('Combining audio with background music...')
+        await combineAudioWithDucking(job.audioFile.path, musicPath, mixedAudioPath, {
+          musicVolume: 0.15,
+          duckingThreshold: -25,
+          duckingRatio: 3,
+          attackTime: 0.2,
+          releaseTime: 1.0
+        })
+        
+        // Then assemble the final video with mixed audio, visuals, and subtitles
+        console.log('Assembling final video...')
+        await assembleVideo(mixedAudioPath, visualsPath, subtitlesPath, finalVideoPath, {
+          width: 1920,
+          height: 1080,
+          fps: 30,
+          bitrate: '5000k',
+          preset: 'medium',
+          crf: 20
+        })
+        
+        job.steps[4].details = { 
+          info: 'Video assembled with audio ducking and subtitles', 
+          finalVideoPath,
+          mixedAudioPath,
+          duration,
+          resolution: '1920x1080',
+          bitrate: '5000k'
+        }
+        
+        jobs.set(jobId, job)
+        await saveJobs()
+        await updateJobStep(jobId, 4, 'completed')
+      } catch (error) {
+        console.error('Video assembly failed:', error)
+        // Fallback: simple assembly without ducking
+        try {
+          console.log('Trying simple video assembly without ducking...')
+          await assembleVideo(job.audioFile.path, visualsPath, subtitlesPath, finalVideoPath, {
+            width: 1920,
+            height: 1080,
+            fps: 30,
+            bitrate: '4000k'
+          })
+          
+          job.steps[4].details = { 
+            info: 'Video assembled (simple mode, no audio ducking)', 
+            finalVideoPath,
+            duration,
+            resolution: '1920x1080',
+            bitrate: '4000k'
+          }
+          
+          jobs.set(jobId, job)
+          await saveJobs()
+          await updateJobStep(jobId, 4, 'completed')
+        } catch (fallbackError) {
+          console.error('Simple video assembly also failed:', fallbackError)
+          throw fallbackError
+        }
+      }
+    } else if (stepIndex === 5) { // Metadata Generation
+      const tempDir = path.join(process.cwd(), 'temp')
+      const duration = job.audioFile.duration || (job.audioAnalysis?.duration ?? 180)
+      
+      try {
+        // Load transcript if not already in job object
+        await loadTranscriptIfNeeded(jobId, job)
+        
+        // Generate YouTube metadata from transcript
+        if (job.transcript) {
+          console.log('Generating YouTube metadata from transcript...')
+          const metadata = await generateYouTubeMetadata(
+            job.transcript,
+            job.audioFile.name,
+            duration,
+            {
+              maxTitleLength: 100,
+              maxDescriptionLength: 5000,
+              maxTags: 15
+            }
+          )
+          
+          // Add resolution and duration info
+          const completeMetadata = {
+            ...metadata,
+            duration,
+            resolution: {
+              width: 1920,
+              height: 1080
+            }
+          }
+          
+          // Store metadata in job
+          job.metadata = completeMetadata
+          
+          // Save metadata to file
+          const metadataPath = path.join(tempDir, `${jobId}-metadata.json`)
+          await saveMetadataToFile(completeMetadata, metadataPath)
+          
+          job.steps[5].details = { 
+            info: 'YouTube metadata generated with AI analysis',
+            metadataPath,
+            title: metadata.title,
+            tags: metadata.tags.length,
+            chapters: metadata.chapters.length,
+            descriptionLength: metadata.description.length
+          }
+        } else {
+          // Fallback metadata generation without transcript
+          console.log('Generating basic metadata (no transcript available)...')
+          const basicMetadata = {
+            title: job.audioFile.name.replace(/\.[^/.]+$/, ''),
+            description: `Podcast episode converted to video\n\nDuration: ${Math.floor(duration/60)}:${Math.floor(duration%60).toString().padStart(2,'0')}\n\nThis video was automatically generated from audio content.`,
+            tags: ['podcast', 'audio', 'video', 'education'],
+            chapters: [],
+            thumbnail: 'auto-generated',
+            duration,
+            resolution: { width: 1920, height: 1080 }
+          }
+          
+          job.metadata = basicMetadata
+          
+          const metadataPath = path.join(tempDir, `${jobId}-metadata.json`)
+          await saveMetadataToFile(basicMetadata, metadataPath)
+          
+          job.steps[5].details = { 
+            info: 'Basic metadata generated (no transcript available)',
+            metadataPath,
+            title: basicMetadata.title,
+            tags: basicMetadata.tags.length,
+            chapters: 0
+          }
+        }
+        
+        jobs.set(jobId, job)
+        await saveJobs()
+        await updateJobStep(jobId, 5, 'completed')
+      } catch (error) {
+        console.error('Metadata generation failed:', error)
+        throw error
+      }
     }
 
     // Check if all steps are completed
@@ -283,6 +583,39 @@ export async function processSpecificStep(jobId: string, stepIndex: number) {
     jobs.set(jobId, job)
     await saveJobs()
     throw error
+  }
+}
+
+/**
+ * Load transcript from existing JSON file if not in job object
+ */
+async function loadTranscriptIfNeeded(jobId: string, job: ProcessingJob): Promise<void> {
+  if (!job.transcript) {
+    try {
+      const tempDir = path.join(process.cwd(), 'temp')
+      const jsonFile = path.join(tempDir, `${jobId}-audio.json`)
+      const transcriptData = await readFile(jsonFile, 'utf-8')
+      const parsed = JSON.parse(transcriptData)
+      
+      const segments: TranscriptionSegment[] = parsed.segments.map((segment: Record<string, unknown>) => ({
+        text: String(segment.text || '').trim(),
+        start: Number(segment.start) || 0,
+        end: Number(segment.end) || 0,
+        confidence: segment.avg_logprob ? Math.exp(Number(segment.avg_logprob)) : 0.5
+      }))
+      
+      job.transcript = {
+        segments,
+        language: parsed.language || 'en',
+        duration: parsed.segments[parsed.segments.length - 1]?.end || 0
+      }
+      
+      jobs.set(jobId, job)
+      await saveJobs()
+      console.log(`Loaded existing transcript for job ${jobId}`)
+    } catch (error) {
+      console.log(`No existing transcript found for job ${jobId}:`, error)
+    }
   }
 }
 

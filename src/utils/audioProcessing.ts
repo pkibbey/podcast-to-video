@@ -437,3 +437,379 @@ export async function generateSimpleVisuals(
       .run()
   })
 }
+
+/**
+ * Assemble final video by combining audio, visuals, and subtitles
+ */
+export async function assembleVideo(
+  audioPath: string,
+  visualsPath: string,
+  subtitlesPath: string,
+  outputPath: string,
+  options: {
+    width?: number
+    height?: number
+    fps?: number
+    bitrate?: string
+    preset?: string
+    crf?: number
+  } = {}
+): Promise<string> {
+  const {
+    width = 1920,
+    height = 1080,
+    fps = 30,
+    bitrate = '4000k',
+    preset = 'medium',
+    crf = 23
+  } = options
+
+  return new Promise((resolve, reject) => {
+    ffmpeg()
+      .input(visualsPath) // Video input
+      .input(audioPath)   // Audio input
+      .videoCodec('libx264')
+      .audioCodec('aac')
+      .videoFilters([
+        `subtitles=${subtitlesPath}:force_style='FontSize=24,PrimaryColour=&HFFFFFF&,OutlineColour=&H000000&,BorderStyle=1,Outline=2'`
+      ])
+      .outputOptions([
+        '-pix_fmt', 'yuv420p',
+        '-preset', preset,
+        '-crf', crf.toString(),
+        '-b:v', bitrate,
+        '-b:a', '192k',
+        '-movflags', '+faststart' // Optimize for web streaming
+      ])
+      .size(`${width}x${height}`)
+      .fps(fps)
+      .format('mp4')
+      .output(outputPath)
+      .on('end', () => resolve(outputPath))
+      .on('error', (err) => {
+        console.error('Video assembly error:', err)
+        reject(err)
+      })
+      .run()
+  })
+}
+
+/**
+ * Combine audio tracks with ducking (lower background music during speech)
+ */
+export async function combineAudioWithDucking(
+  primaryAudioPath: string,
+  backgroundMusicPath: string,
+  outputPath: string,
+  options: {
+    musicVolume?: number
+    duckingThreshold?: number
+    duckingRatio?: number
+    attackTime?: number
+    releaseTime?: number
+  } = {}
+): Promise<string> {
+  const {
+    musicVolume = 0.2,
+    duckingThreshold = -20,
+    duckingRatio = 4,
+    attackTime = 0.1,
+    releaseTime = 0.8
+  } = options
+
+  return new Promise((resolve, reject) => {
+    ffmpeg()
+      .input(primaryAudioPath)
+      .input(backgroundMusicPath)
+      .complexFilter([
+        `[1]volume=${musicVolume}[music]`,
+        `[0][music]sidechaincompress=threshold=${duckingThreshold}dB:ratio=${duckingRatio}:attack=${attackTime}:release=${releaseTime}[ducked]`
+      ])
+      .map('[ducked]')
+      .audioCodec('pcm_s16le')
+      .audioChannels(2)
+      .audioFrequency(44100)
+      .format('wav')
+      .output(outputPath)
+      .on('end', () => resolve(outputPath))
+      .on('error', (err) => {
+        console.error('Audio ducking error:', err)
+        reject(err)
+      })
+      .run()
+  })
+}
+
+/**
+ * Generate YouTube-ready metadata from transcript using AI analysis
+ */
+export async function generateYouTubeMetadata(
+  transcript: Transcript,
+  audioFileName: string,
+  duration: number,
+  options: {
+    maxTitleLength?: number
+    maxDescriptionLength?: number
+    maxTags?: number
+  } = {}
+): Promise<{
+  title: string
+  description: string
+  tags: string[]
+  chapters: Array<{ time: number; title: string }>
+  thumbnail: string
+}> {
+  const {
+    maxTitleLength = 100,
+    maxDescriptionLength = 5000,
+    maxTags = 15
+  } = options
+
+  // Extract key information from transcript
+  const fullText = transcript.segments.map(s => s.text).join(' ')
+  const words = fullText.split(' ').length
+  const readingTime = Math.ceil(words / 200) // Average reading speed
+
+  // Generate title from filename and content analysis
+  const cleanFileName = audioFileName
+    .replace(/\.[^/.]+$/, '') // Remove extension
+    .replace(/[-_]/g, ' ') // Replace dashes/underscores with spaces
+    .replace(/\s+/g, ' ') // Normalize spaces
+    .trim()
+
+  // Extract key topics and themes
+  const keyWords = extractKeyWords(fullText)
+  const topics = extractTopics(fullText)
+
+  // Generate title
+  let title = cleanFileName
+  if (title.length > maxTitleLength) {
+    title = title.substring(0, maxTitleLength - 3) + '...'
+  }
+
+  // Generate description
+  const description = generateDescription(fullText, cleanFileName, duration, readingTime, keyWords)
+
+  // Generate tags
+  const tags = generateTags(keyWords, topics, cleanFileName).slice(0, maxTags)
+
+  // Generate chapters (every 5-10 minutes or major topic changes)
+  const chapters = generateChapters(transcript.segments, duration)
+
+  return {
+    title,
+    description: description.substring(0, maxDescriptionLength),
+    tags,
+    chapters,
+    thumbnail: 'auto-generated' // Placeholder for thumbnail generation
+  }
+}
+
+/**
+ * Extract key words from text using frequency analysis
+ */
+function extractKeyWords(text: string): string[] {
+  const words = text.toLowerCase()
+    .replace(/[^\w\s]/g, '') // Remove punctuation
+    .split(/\s+/)
+    .filter(word => word.length > 3) // Filter short words
+
+  // Common stop words to exclude
+  const stopWords = new Set([
+    'that', 'this', 'with', 'from', 'they', 'been', 'have', 'were', 'said', 'each', 'which',
+    'their', 'time', 'will', 'about', 'would', 'there', 'could', 'other', 'more', 'very',
+    'what', 'know', 'just', 'first', 'into', 'over', 'think', 'also', 'your', 'work',
+    'life', 'only', 'new', 'years', 'way', 'may', 'people', 'good', 'well', 'much'
+  ])
+
+  // Count word frequency
+  const wordCount = new Map<string, number>()
+  words.forEach(word => {
+    if (!stopWords.has(word)) {
+      wordCount.set(word, (wordCount.get(word) || 0) + 1)
+    }
+  })
+
+  // Return most frequent words
+  return Array.from(wordCount.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 20)
+    .map(([word]) => word)
+}
+
+/**
+ * Extract main topics from key words
+ */
+function extractTopics(text: string): string[] {
+  const topics: string[] = []
+  
+  // Technology topics
+  if (/\b(technology|tech|digital|software|ai|artificial intelligence|machine learning|data|programming|code)\b/i.test(text)) {
+    topics.push('Technology')
+  }
+  
+  // Business topics
+  if (/\b(business|entrepreneur|startup|marketing|sales|finance|investment|strategy|management)\b/i.test(text)) {
+    topics.push('Business')
+  }
+  
+  // Health topics
+  if (/\b(health|wellness|fitness|mental health|therapy|psychology|medical|doctor|treatment)\b/i.test(text)) {
+    topics.push('Health')
+  }
+  
+  // Education topics
+  if (/\b(education|learning|teaching|school|university|study|research|academic)\b/i.test(text)) {
+    topics.push('Education')
+  }
+  
+  // Personal development
+  if (/\b(personal development|self improvement|motivation|success|goals|habits|productivity)\b/i.test(text)) {
+    topics.push('Personal Development')
+  }
+
+  // Science topics
+  if (/\b(science|research|study|experiment|theory|discovery|scientific|analysis)\b/i.test(text)) {
+    topics.push('Science')
+  }
+
+  return topics
+}
+
+/**
+ * Generate YouTube description
+ */
+function generateDescription(
+  text: string, 
+  title: string, 
+  duration: number, 
+  readingTime: number, 
+  keyWords: string[]
+): string {
+  const durationMinutes = Math.floor(duration / 60)
+  const durationSeconds = Math.floor(duration % 60)
+  
+  // Extract first few sentences as summary
+  const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 10)
+  const summary = sentences.slice(0, 3).join('. ').trim() + '.'
+
+  const description = `${title}
+
+🎧 ${summary}
+
+⏱️ Duration: ${durationMinutes}:${durationSeconds.toString().padStart(2, '0')}
+📖 Estimated reading time: ${readingTime} minutes
+
+🔑 Key topics covered:
+${keyWords.slice(0, 8).map(word => `• ${word.charAt(0).toUpperCase() + word.slice(1)}`).join('\n')}
+
+📝 This podcast has been automatically converted to video with:
+✅ AI-generated transcript and subtitles
+✅ Abstract visual animations
+✅ Ambient background music
+✅ Professional audio mixing
+
+🎯 Perfect for:
+• Learning on the go
+• Accessibility with subtitles
+• Social media sharing
+• Educational content
+
+#podcast #audio #video #ai #transcript #education`
+
+  return description
+}
+
+/**
+ * Generate relevant tags
+ */
+function generateTags(keyWords: string[], topics: string[], title: string): string[] {
+  const tags = new Set<string>()
+  
+  // Add basic podcast tags
+  tags.add('podcast')
+  tags.add('audio')
+  tags.add('video')
+  tags.add('education')
+  tags.add('learning')
+  
+  // Add topics
+  topics.forEach(topic => {
+    tags.add(topic.toLowerCase().replace(' ', ''))
+    tags.add(topic.toLowerCase())
+  })
+  
+  // Add key words (cleaned up)
+  keyWords.slice(0, 8).forEach(word => {
+    if (word.length > 3) {
+      tags.add(word)
+    }
+  })
+  
+  // Add words from title
+  title.toLowerCase().split(' ').forEach(word => {
+    if (word.length > 3 && !/\d/.test(word)) {
+      tags.add(word)
+    }
+  })
+  
+  // Add content type tags
+  tags.add('transcript')
+  tags.add('subtitles')
+  tags.add('ai generated')
+  tags.add('accessibility')
+
+  return Array.from(tags).slice(0, 15)
+}
+
+/**
+ * Generate chapter markers for long content
+ */
+function generateChapters(segments: TranscriptionSegment[], duration: number): Array<{ time: number; title: string }> {
+  const chapters: Array<{ time: number; title: string }> = []
+  
+  // Only create chapters for content longer than 10 minutes
+  if (duration < 600) {
+    return chapters
+  }
+  
+  const chapterInterval = Math.max(300, Math.floor(duration / 8)) // 5 minutes minimum, max 8 chapters
+  
+  for (let time = 0; time < duration; time += chapterInterval) {
+    // Find segment closest to this time
+    const segment = segments.find(s => Math.abs(s.start - time) < 30) || segments[0]
+    
+    // Extract a meaningful title from the segment
+    let title = segment.text.trim()
+    if (title.length > 50) {
+      title = title.substring(0, 47) + '...'
+    }
+    
+    // Clean up the title
+    title = title.replace(/^[^\w]*/, '') // Remove leading non-word chars
+    title = title.charAt(0).toUpperCase() + title.slice(1) // Capitalize
+    
+    if (!title) {
+      title = `Chapter ${Math.floor(time / chapterInterval) + 1}`
+    }
+    
+    chapters.push({
+      time: Math.floor(time),
+      title
+    })
+  }
+  
+  return chapters
+}
+
+/**
+ * Save metadata to JSON file
+ */
+export async function saveMetadataToFile(
+  metadata: Record<string, unknown>,
+  outputPath: string
+): Promise<string> {
+  const metadataJson = JSON.stringify(metadata, null, 2)
+  await writeFile(outputPath, metadataJson, 'utf-8')
+  return outputPath
+}
