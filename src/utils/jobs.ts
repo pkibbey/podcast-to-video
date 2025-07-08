@@ -158,6 +158,12 @@ export async function processAudioFile(jobId: string) {
           bitRate: audioAnalysis.bitRate,
           format: audioAnalysis.format,
         }
+        // Add preview data for waveform visualization
+        job.steps[0].previewData = {
+          type: 'waveform',
+          content: waveformData.slice(0, 1000), // Limit size for preview
+          duration: audioAnalysis.duration
+        }
         jobs.set(jobId, job)
         await saveJobs()
         await updateJobStep(jobId, 0, 'completed')
@@ -172,6 +178,12 @@ export async function processAudioFile(jobId: string) {
         job.transcript = transcript
         
         job.steps[1].details = { segmentCount: transcript.segments.length, language: transcript.language, duration: transcript.duration }
+        // Add preview data for transcript
+        job.steps[1].previewData = {
+          type: 'transcript',
+          content: transcript,
+          duration: transcript.duration
+        }
         const srtPath = path.join(tempDir, `${jobId}-subtitles.srt`)
         await generateSRT(transcript, srtPath)
         jobs.set(jobId, job)
@@ -184,6 +196,12 @@ export async function processAudioFile(jobId: string) {
         const musicPath = path.join(tempDir, `${jobId}-music.wav`)
         await generateChillSoundtrackFromLocal(Math.ceil(duration), musicPath)
         job.steps[2].details = { info: 'Ambient music generated from local files', musicPath }
+        // Add preview data for audio
+        job.steps[2].previewData = {
+          type: 'audio',
+          path: musicPath,
+          duration: duration
+        }
         jobs.set(jobId, job)
         await saveJobs()
         await updateJobStep(jobId, 2, 'completed')
@@ -233,6 +251,13 @@ export async function processAudioFile(jobId: string) {
             bitrate: '5000k'
           }
           
+          // Add preview data for final video
+          job.steps[4].previewData = {
+            type: 'video',
+            path: finalVideoPath,
+            duration: duration
+          }
+          
           jobs.set(jobId, job)
           await saveJobs()
           await updateJobStep(jobId, 4, 'completed')
@@ -254,6 +279,13 @@ export async function processAudioFile(jobId: string) {
               duration,
               resolution: '1920x1080',
               bitrate: '4000k'
+            }
+            
+            // Add preview data for final video
+            job.steps[4].previewData = {
+              type: 'video',
+              path: finalVideoPath,
+              duration: duration
             }
             
             jobs.set(jobId, job)
@@ -312,6 +344,12 @@ export async function processAudioFile(jobId: string) {
               chapters: metadata.chapters.length,
               descriptionLength: metadata.description.length
             }
+            
+            // Add preview data for metadata
+            job.steps[5].previewData = {
+              type: 'metadata',
+              content: completeMetadata
+            }
           } else {
             // Fallback metadata generation without transcript
             console.log('Generating basic metadata (no transcript available)...')
@@ -336,6 +374,12 @@ export async function processAudioFile(jobId: string) {
               title: basicMetadata.title,
               tags: basicMetadata.tags.length,
               chapters: 0
+            }
+            
+            // Add preview data for metadata
+            job.steps[5].previewData = {
+              type: 'metadata',
+              content: basicMetadata
             }
           }
           
@@ -428,6 +472,12 @@ async function actuallyProcessStep(jobId: string, stepIndex: number): Promise<bo
         bitRate: audioAnalysis.bitRate,
         format: audioAnalysis.format,
       }
+      // Add preview data for waveform visualization
+      job.steps[0].previewData = {
+        type: 'waveform',
+        content: waveformData.slice(0, 1000), // Limit size for preview
+        duration: audioAnalysis.duration
+      }
       jobs.set(jobId, job)
       await saveJobs()
       await updateJobStep(jobId, 0, 'completed')
@@ -441,6 +491,12 @@ async function actuallyProcessStep(jobId: string, stepIndex: number): Promise<bo
       job.transcript = transcript
       
       job.steps[1].details = { segmentCount: transcript.segments.length, language: transcript.language, duration: transcript.duration }
+      // Add preview data for transcript
+      job.steps[1].previewData = {
+        type: 'transcript',
+        content: transcript,
+        duration: transcript.duration
+      }
       const srtPath = path.join(tempDir, `${jobId}-subtitles.srt`)
       await generateSRT(transcript, srtPath)
       jobs.set(jobId, job)
@@ -452,6 +508,12 @@ async function actuallyProcessStep(jobId: string, stepIndex: number): Promise<bo
       const musicPath = path.join(tempDir, `${jobId}-music.wav`)
       await generateChillSoundtrackFromLocal(Math.ceil(duration), musicPath)
       job.steps[2].details = { info: 'Ambient music generated from local files', musicPath }
+      // Add preview data for audio
+      job.steps[2].previewData = {
+        type: 'audio',
+        path: musicPath,
+        duration: duration
+      }
       jobs.set(jobId, job)
       await saveJobs()
       await updateJobStep(jobId, 2, 'completed')
@@ -503,6 +565,12 @@ async function actuallyProcessStep(jobId: string, stepIndex: number): Promise<bo
           resolution: `${modeConfig.width}x${modeConfig.height}`,
           mode: performanceMode
         };
+        // Add preview data for video
+        job.steps[3].previewData = {
+          type: 'video',
+          path: visualsPath,
+          duration: duration
+        };
       } catch (error) {
         console.log(`Optimized visual generation failed for job ${jobId}, trying ultra-fast fallback:`, error)
         
@@ -532,6 +600,12 @@ async function actuallyProcessStep(jobId: string, stepIndex: number): Promise<bo
             duration,
             resolution: `${fastMode.width}x${fastMode.height}`,
             mode: 'real-time-fallback'
+          };
+          // Add preview data for video
+          job.steps[3].previewData = {
+            type: 'video',
+            path: visualsPath,
+            duration: duration
           };
         } catch (fallbackError) {
           console.log(`Ultra-fast visual generation also failed for job ${jobId}, using simple fallback:`, fallbackError)
@@ -572,7 +646,22 @@ async function actuallyProcessStep(jobId: string, stepIndex: number): Promise<bo
             duration,
             resolution: '854x480'
           };
+          // Add preview data for video
+          job.steps[3].previewData = {
+            type: 'video',
+            path: visualsPath,
+            duration: duration
+          };
         }
+      }
+      
+      // Add preview data for video (only if not already set by fallback paths)
+      if (!job.steps[3].previewData) {
+        job.steps[3].previewData = {
+          type: 'video',
+          path: visualsPath,
+          duration: duration
+        };
       }
       
       jobs.set(jobId, job)
@@ -620,6 +709,13 @@ async function actuallyProcessStep(jobId: string, stepIndex: number): Promise<bo
           bitrate: '5000k'
         }
         
+        // Add preview data for final video
+        job.steps[4].previewData = {
+          type: 'video',
+          path: finalVideoPath,
+          duration: duration
+        }
+        
         jobs.set(jobId, job)
         await saveJobs()
         await updateJobStep(jobId, 4, 'completed')
@@ -642,6 +738,13 @@ async function actuallyProcessStep(jobId: string, stepIndex: number): Promise<bo
             duration,
             resolution: '1920x1080',
             bitrate: '4000k'
+          }
+          
+          // Add preview data for final video
+          job.steps[4].previewData = {
+            type: 'video',
+            path: finalVideoPath,
+            duration: duration
           }
           
           jobs.set(jobId, job)
@@ -696,6 +799,12 @@ async function actuallyProcessStep(jobId: string, stepIndex: number): Promise<bo
             chapters: metadata.chapters.length,
             descriptionLength: metadata.description.length
           }
+          
+          // Add preview data for metadata
+          job.steps[5].previewData = {
+            type: 'metadata',
+            content: completeMetadata
+          }
         } else {
           // Fallback metadata generation without transcript
           console.log('Generating basic metadata (no transcript available)...')
@@ -720,6 +829,12 @@ async function actuallyProcessStep(jobId: string, stepIndex: number): Promise<bo
             title: basicMetadata.title,
             tags: basicMetadata.tags.length,
             chapters: 0
+          }
+          
+          // Add preview data for metadata
+          job.steps[5].previewData = {
+            type: 'metadata',
+            content: basicMetadata
           }
         }
         

@@ -1,7 +1,11 @@
 
 import AudioUpload from '@/components/AudioUpload'
 
-export default async function JobPage({ params }: { params: { jobId: string } }) {
+export default async function JobPage({ 
+  params 
+}: { 
+  params: Promise<{ jobId: string }> 
+}) {
   const { jobId } = await params
   // Pass jobId as prop to AudioUpload for job resuming
 

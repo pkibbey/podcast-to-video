@@ -38,6 +38,13 @@ export interface ProcessingStep {
   completedAt?: Date;
   error?: string;
   details?: any;
+  previewData?: {
+    type: 'waveform' | 'transcript' | 'audio' | 'video' | 'text' | 'metadata';
+    content?: string | number[] | object;
+    path?: string;
+    thumbnail?: string;
+    duration?: number;
+  };
 }
 
 export interface TranscriptionSegment {

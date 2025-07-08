@@ -7,6 +7,7 @@ import { AudioAnalysis } from '@/utils/audioProcessing';
 import { getPerformanceEstimates, getRecommendedMode } from '@/utils/performance'
 import { VISUAL_PERFORMANCE_MODES, getPerformanceComparison, USAGE_RECOMMENDATIONS } from '@/constants/performance'
 import type { VisualPerformanceMode } from '@/types'
+import StepPreview from './StepPreview'
 
 function AudioAnalysisDetails({ analysis }: { analysis: AudioAnalysis | undefined }) {
   if (!analysis) return null;
@@ -279,7 +280,7 @@ export default function AudioUpload({ jobId: initialJobId }: { jobId?: string } 
                     className="mt-1"
                   />
                   <div className="flex-1">
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-2 flex-1">
                       <span className="font-medium capitalize">{mode.replace('-', ' ')}</span>
                       {mode === 'fast' && <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">Recommended</span>}
                       {mode === 'real-time' && <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded">Fastest</span>}
@@ -303,7 +304,7 @@ export default function AudioUpload({ jobId: initialJobId }: { jobId?: string } 
                 <h4 className="font-medium mb-2">Performance Improvements</h4>
                 <div className="text-sm space-y-1">
                   {Object.entries(getPerformanceComparison().improvements).map(([mode, improvement]) => (
-                    <div key={mode} className="flex items-center space-x-2">
+                    <div key={mode} className="flex items-center space-x-2 flex-1">
                       <span className="capitalize font-medium w-20">{mode.replace('-', ' ')}:</span>
                       <span className="text-gray-600">{improvement}</span>
                     </div>
@@ -355,7 +356,7 @@ export default function AudioUpload({ jobId: initialJobId }: { jobId?: string } 
 
       {!isLoadingJob && processingJob && processingJob.status && (
         <div className="bg-white rounded-lg shadow-lg p-6">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-4 gap-2">
             <h2 className="text-xl font-semibold text-gray-900">Processing</h2>
             <span className={`px-3 py-1 rounded-full text-sm font-medium ${
               processingJob.status === 'completed' ? 'bg-green-100 text-green-800' :
@@ -382,7 +383,7 @@ export default function AudioUpload({ jobId: initialJobId }: { jobId?: string } 
 
           {processingJob.status === 'uploaded' && (
             <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-2 flex-1">
                 <div className="text-blue-600">ℹ️</div>
                 <div>
                   <p className="text-blue-800 font-medium">Ready to process!</p>
@@ -470,8 +471,8 @@ export default function AudioUpload({ jobId: initialJobId }: { jobId?: string } 
                             <div className="text-red-700">{step.error}</div>
                           </div>
                         )}
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center space-x-2 flex-1">
                             {canStart && (
                               <button
                                 onClick={() => startStep(index)}
@@ -481,6 +482,7 @@ export default function AudioUpload({ jobId: initialJobId }: { jobId?: string } 
                               </button>
                             )}
                             {step.details && <StepExpand step={step} />}
+                            <StepPreview step={step} stepIndex={index} />
                             {step.status === 'failed' && (
                               <button
                                 onClick={() => startStep(index)}
