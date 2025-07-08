@@ -208,8 +208,7 @@ export async function combineAudioWithDucking(
         `[0][music]sidechaincompress=threshold=${duckingThreshold}dB:ratio=${duckingRatio}:attack=${attackTime}:release=${releaseTime}[ducked]`
       ])
       .map('[ducked]')
-      .audioCodec('aac')
-      .audioBitrate('192k')
+      .audioCodec('pcm_s16le')
       .format('wav')
       .output(outputPath)
       .on('end', () => resolve(outputPath))

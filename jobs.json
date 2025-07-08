@@ -10,8 +10,8 @@
       "size": 99909164,
       "uploadedAt": "2025-07-07T23:48:29.698Z"
     },
-    "status": "pending",
-    "progress": 67,
+    "status": "completed",
+    "progress": 100,
     "startedAt": "2025-07-07T23:48:29.698Z",
     "visualMode": "fast",
     "steps": [
@@ -67,14 +67,33 @@
       },
       {
         "name": "Video Assembly",
-        "status": "processing",
-        "progress": 50,
-        "startedAt": "2025-07-07T23:48:49.823Z"
+        "status": "completed",
+        "progress": 100,
+        "startedAt": "2025-07-07T23:56:17.247Z",
+        "details": {
+          "info": "Video assembled with audio ducking and subtitles",
+          "finalVideoPath": "/Users/phineas/Sites/podcast-to-video/temp/b10471b2-819e-4418-b9cb-c3a846f2bce4-final.mp4",
+          "mixedAudioPath": "/Users/phineas/Sites/podcast-to-video/temp/b10471b2-819e-4418-b9cb-c3a846f2bce4-mixed-audio.wav",
+          "duration": 60,
+          "resolution": "1920x1080",
+          "bitrate": "5000k"
+        },
+        "completedAt": "2025-07-07T23:56:36.738Z"
       },
       {
         "name": "Metadata Generation",
-        "status": "pending",
-        "progress": 0
+        "status": "completed",
+        "progress": 100,
+        "startedAt": "2025-07-07T23:56:36.738Z",
+        "details": {
+          "info": "YouTube metadata generated with AI analysis",
+          "metadataPath": "/Users/phineas/Sites/podcast-to-video/temp/b10471b2-819e-4418-b9cb-c3a846f2bce4-metadata.json",
+          "title": "Person Centered Therapy History, Impact, and Future Trajectory",
+          "tags": 15,
+          "chapters": 0,
+          "descriptionLength": 1067
+        },
+        "completedAt": "2025-07-07T23:56:36.740Z"
       }
     ],
     "audioAnalysis": {
@@ -1170,6 +1189,35 @@
       "language": "en",
       "duration": 59.97
     },
-    "error": "ffmpeg exited with code 254: Error opening input file /Users/phineas/Sites/podcast-to-video/temp/b10471b2-819e-4418-b9cb-c3a846f2bce4-visuals.mp4.\nError opening input files: No such file or directory\n"
+    "metadata": {
+      "title": "Person Centered Therapy History, Impact, and Future Trajectory",
+      "description": "Person Centered Therapy History, Impact, and Future Trajectory\n\n🎧 Imagine having a friend, like a really good friend, who genuinely gets you, you know, without judging, just helping you find your own strengths, your own answers from inside you.  What if that feeling of that really affirming connection was actually the heart of a whole way of thinking about human potential, a really revolutionary approach.  Today, we're doing a deep dive into some fascinating sources all about Carl Rogers and his, while groundbreaking, person-centered therapy, PCT for short.\n\n⏱️ Duration: 1:00\n📖 Estimated reading time: 1 minutes\n\n🔑 Key topics covered:\n• Really\n• Friend\n• Approach\n• Today\n• Therapy\n• Where\n• Look\n• Kind\n\n📝 This podcast has been automatically converted to video with:\n✅ AI-generated transcript and subtitles\n✅ Abstract visual animations\n✅ Ambient background music\n✅ Professional audio mixing\n\n🎯 Perfect for:\n• Learning on the go\n• Accessibility with subtitles\n• Social media sharing\n• Educational content\n\n#podcast #audio #video #ai #transcript #education",
+      "tags": [
+        "podcast",
+        "audio",
+        "video",
+        "education",
+        "learning",
+        "health",
+        "really",
+        "friend",
+        "approach",
+        "today",
+        "therapy",
+        "where",
+        "look",
+        "kind",
+        "person"
+      ],
+      "chapters": [],
+      "thumbnail": "auto-generated",
+      "duration": 60,
+      "resolution": {
+        "width": 1920,
+        "height": 1080
+      }
+    },
+    "completedAt": "2025-07-07T23:56:36.740Z",
+    "outputPath": "/api/download/b10471b2-819e-4418-b9cb-c3a846f2bce4"
   }
 }
