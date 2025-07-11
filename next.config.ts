@@ -24,6 +24,12 @@ const nextConfig: NextConfig = {
 
     return config
   },
+  // Environment variables configuration
+  env: {
+    FREESOUND_API_KEY: process.env.FREESOUND_API_KEY,
+    FREESOUND_CLIENT_ID: process.env.FREESOUND_CLIENT_ID,
+    FREESOUND_CLIENT_SECRET: process.env.FREESOUND_CLIENT_SECRET,
+  },
   // Turbopack configuration - handles audio files as static assets natively
   turbopack: {
     resolveExtensions: [

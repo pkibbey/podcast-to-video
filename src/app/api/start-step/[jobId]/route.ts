@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { jobs, saveJobs, processSpecificStep, getProcessingLocks } from '@/utils/jobs'
+import { jobs, saveJobs, processSpecificStep, restartSpecificStep, getProcessingLocks } from '@/utils/jobs'
 
 export async function POST(
   request: NextRequest,
@@ -7,9 +7,9 @@ export async function POST(
 ) {
   try {
     const { jobId } = await params
-    const { stepIndex } = await request.json()
+    const { stepIndex, forceReprocess = false } = await request.json()
     
-    console.log(`[API] POST /api/start-step/${jobId} - stepIndex: ${stepIndex}`)
+    console.log(`[API] POST /api/start-step/${jobId} - stepIndex: ${stepIndex}, forceReprocess: ${forceReprocess}`)
     
     const job = jobs.get(jobId)
     if (!job) {
@@ -23,14 +23,18 @@ export async function POST(
     }
 
     const step = job.steps[stepIndex]
-    if (step.status === 'completed') {
-      console.log(`[API] Step ${stepIndex} already completed for job ${jobId}`)
-      return NextResponse.json({ error: 'Step already completed' }, { status: 400 })
-    }
+    
+    // If not forcing reprocess, check step status
+    if (!forceReprocess) {
+      if (step.status === 'completed') {
+        console.log(`[API] Step ${stepIndex} already completed for job ${jobId}`)
+        return NextResponse.json({ error: 'Step already completed' }, { status: 400 })
+      }
 
-    if (step.status === 'processing') {
-      console.log(`[API] Step ${stepIndex} already processing for job ${jobId}`)
-      return NextResponse.json({ error: 'Step already processing' }, { status: 400 })
+      if (step.status === 'processing') {
+        console.log(`[API] Step ${stepIndex} already processing for job ${jobId}`)
+        return NextResponse.json({ error: 'Step already processing' }, { status: 400 })
+      }
     }
 
     // Check if this step is currently locked (being processed by another request)
@@ -41,8 +45,8 @@ export async function POST(
       return NextResponse.json({ error: 'Step already processing' }, { status: 400 })
     }
 
-    // Check if previous steps are completed (except for step 0)
-    if (stepIndex > 0) {
+    // Check if previous steps are completed (except for step 0 or when force reprocessing)
+    if (!forceReprocess && stepIndex > 0) {
       for (let i = 0; i < stepIndex; i++) {
         if (job.steps[i].status !== 'completed') {
           return NextResponse.json({ 
@@ -52,32 +56,49 @@ export async function POST(
       }
     }
 
-    // Start processing this specific step
-    console.log(`[API] Starting processing of step ${stepIndex} for job ${jobId}`)
-    job.status = 'processing'
-    step.status = 'processing'
-    step.startedAt = new Date()
-    // Clear any previous error when retrying
-    if (step.error) {
-      delete step.error
-    }
-    jobs.set(jobId, job)
-    await saveJobs()
-
-    // Process the step in background
-    console.log(`[API] Calling processSpecificStep(${jobId}, ${stepIndex})`)
-    processSpecificStep(jobId, stepIndex).catch(async (error: unknown) => {
-      console.error('[API] Step processing error:', error)
-      const job = jobs.get(jobId)
-      if (job) {
-        const step = job.steps[stepIndex]
-        step.status = 'failed'
-        step.error = error instanceof Error ? error.message : 'Unknown error'
-        job.status = 'pending' // Allow retry of other steps
-        jobs.set(jobId, job)
-        await saveJobs()
+    if (forceReprocess) {
+      // Use the restart function to reset and reprocess the step
+      console.log(`[API] Force reprocessing step ${stepIndex} for job ${jobId}`)
+      restartSpecificStep(jobId, stepIndex).catch(async (error: unknown) => {
+        console.error('[API] Step reprocessing error:', error)
+        const job = jobs.get(jobId)
+        if (job) {
+          const step = job.steps[stepIndex]
+          step.status = 'failed'
+          step.error = error instanceof Error ? error.message : 'Unknown error'
+          job.status = 'pending' // Allow retry of other steps
+          jobs.set(jobId, job)
+          await saveJobs()
+        }
+      })
+    } else {
+      // Start processing this specific step normally
+      console.log(`[API] Starting processing of step ${stepIndex} for job ${jobId}`)
+      job.status = 'processing'
+      step.status = 'processing'
+      step.startedAt = new Date()
+      // Clear any previous error when retrying
+      if (step.error) {
+        delete step.error
       }
-    })
+      jobs.set(jobId, job)
+      await saveJobs()
+
+      // Process the step in background
+      console.log(`[API] Calling processSpecificStep(${jobId}, ${stepIndex})`)
+      processSpecificStep(jobId, stepIndex, false).catch(async (error: unknown) => {
+        console.error('[API] Step processing error:', error)
+        const job = jobs.get(jobId)
+        if (job) {
+          const step = job.steps[stepIndex]
+          step.status = 'failed'
+          step.error = error instanceof Error ? error.message : 'Unknown error'
+          job.status = 'pending' // Allow retry of other steps
+          jobs.set(jobId, job)
+          await saveJobs()
+        }
+      })
+    }
 
     return NextResponse.json({ 
       success: true, 

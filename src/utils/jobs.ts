@@ -2,7 +2,7 @@ import { ProcessingJob, TranscriptionSegment, VisualPerformanceMode } from '@/ty
 import { readFile, writeFile } from 'fs/promises'
 import { readFileSync } from 'fs'
 import path from 'path'
-import { analyzeAudio, transcribeAudio, generateSRT, convertToWav, extractWaveform, generateChillSoundtrackFromLocal, generateAbstractVisuals, generateSimpleVisuals, generateFastVisuals, generateStreamingVisuals, generateYouTubeMetadata, saveMetadataToFile } from '@/utils/audioProcessing'
+import { analyzeAudio, transcribeAudio, generateSRT, convertToWav, extractWaveform, generateChillSoundtrackFromLocal, generateAbstractVisuals, generateSimpleVisuals, generateFastVisuals, generateStreamingVisuals, generateYouTubeMetadata, saveMetadataToFile, optimizeMusicForPodcast, downloadFreeAmbientMusic, cleanupJobFiles } from '@/utils/audioProcessing'
 import { assembleVideo, combineAudioWithDucking } from '@/utils/videoProcessing'
 import { VISUAL_PERFORMANCE_MODES, DEFAULT_VISUAL_MODE } from '@/constants/performance'
 
@@ -207,7 +207,7 @@ export async function processAudioFile(jobId: string) {
         await updateJobStep(jobId, 2, 'completed')
       } else if (i === 3) { // Visual Generation
         // Use the centralized step processing with locking
-        await processSpecificStep(jobId, 3)
+        await processSpecificStep(jobId, 3, false)
       } else if (i === 4) { // Video Assembly
         await updateJobStep(jobId, 4, 'processing')
         const tempDir = path.join(process.cwd(), 'temp')
@@ -407,7 +407,7 @@ export async function processAudioFile(jobId: string) {
   }
 }
 
-export async function processSpecificStep(jobId: string, stepIndex: number) {
+export async function processSpecificStep(jobId: string, stepIndex: number, forceReprocess: boolean = false) {
   const lockKey = `${jobId}-${stepIndex}`;
   
   // Check if this step is already being processed
@@ -422,7 +422,7 @@ export async function processSpecificStep(jobId: string, stepIndex: number) {
   }
   
   // Create a new promise for this processing step
-  const processingPromise = actuallyProcessStep(jobId, stepIndex);
+  const processingPromise = actuallyProcessStep(jobId, stepIndex, forceReprocess);
   processingLocks.set(lockKey, processingPromise);
   
   console.log(`Lock acquired for ${lockKey}. Current locks:`, Array.from(processingLocks.keys()));
@@ -437,7 +437,51 @@ export async function processSpecificStep(jobId: string, stepIndex: number) {
   }
 }
 
-async function actuallyProcessStep(jobId: string, stepIndex: number): Promise<boolean> {
+export async function restartSpecificStep(jobId: string, stepIndex: number) {
+  const job = jobs.get(jobId);
+  if (!job) {
+    throw new Error(`Job ${jobId} not found`);
+  }
+
+  if (stepIndex < 0 || stepIndex >= job.steps.length) {
+    throw new Error(`Invalid step index ${stepIndex} for job ${jobId}`);
+  }
+
+  const step = job.steps[stepIndex];
+  
+  // Reset the step to processing state
+  step.status = 'processing';
+  step.progress = 0;
+  step.startedAt = new Date();
+  step.completedAt = undefined;
+  if (step.error) {
+    delete step.error;
+  }
+  if (step.details) {
+    delete step.details;
+  }
+  if (step.previewData) {
+    delete step.previewData;
+  }
+
+  // Update job status to processing if it was completed or failed
+  if (job.status === 'completed' || job.status === 'failed') {
+    job.status = 'processing';
+    if (job.error) {
+      delete job.error;
+    }
+  }
+
+  jobs.set(jobId, job);
+  await saveJobs();
+
+  console.log(`Restarting step ${stepIndex} (${step.name}) for job ${jobId}`);
+  
+  // Process the step with force reprocess flag
+  return await processSpecificStep(jobId, stepIndex, true);
+}
+
+async function actuallyProcessStep(jobId: string, stepIndex: number, forceReprocess: boolean = false): Promise<boolean> {
   try {
     const job = jobs.get(jobId)
     if (!job) {
@@ -451,13 +495,19 @@ async function actuallyProcessStep(jobId: string, stepIndex: number): Promise<bo
     }
     
     const step = job.steps[stepIndex]
-    if (step.status !== 'processing') {
+    if (!forceReprocess && step.status !== 'processing') {
       console.log(`Step ${stepIndex} for job ${jobId} is not in processing state: ${step.status}`);
       return false;
     }
 
-    console.log(`Starting step ${stepIndex} for job ${jobId}: ${step.name}`);
+    console.log(`Starting step ${stepIndex} for job ${jobId}: ${step.name}${forceReprocess ? ' (reprocessing)' : ''}`);
     console.log('STEP: ', step)
+    
+    // If this is a reprocess, clean up all existing files for this job
+    if (forceReprocess) {
+      console.log(`🧹 Cleaning up existing files for reprocessing job ${jobId}...`)
+      await cleanupJobFiles(jobId)
+    }
 
     if (stepIndex === 0) { // Audio Analysis
       const audioAnalysis = await analyzeAudio(job.audioFile.path)

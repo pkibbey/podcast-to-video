@@ -144,24 +144,27 @@ export default function AudioUpload({ jobId: initialJobId }: { jobId?: string } 
     }
   }, [])
 
-  const startStep = async (stepIndex: number) => {
+  const startStep = async (stepIndex: number, forceReprocess = false) => {
     if (!processingJob) return
-
+    
     try {
       const response = await fetch(`/api/start-step/${processingJob.id}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ stepIndex }),
+        body: JSON.stringify({ 
+          stepIndex,
+          forceReprocess 
+        }),
       })
-
+      
       if (!response.ok) {
         const error = await response.json()
         alert(error.error || 'Failed to start step')
         return
       }
-
+      
       const result = await response.json()
       setProcessingJob(result.job)
       
@@ -489,6 +492,15 @@ export default function AudioUpload({ jobId: initialJobId }: { jobId?: string } 
                                 className="px-2 py-1 text-xs bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
                               >
                                 Retry Step
+                              </button>
+                            )}
+                            {step.status === 'completed' && (
+                              <button
+                                onClick={() => startStep(index, true)}
+                                className="px-2 py-1 text-xs bg-orange-600 text-white rounded-md hover:bg-orange-700 transition-colors"
+                                title="Reprocess this step (will overwrite existing data)"
+                              >
+                                Reprocess
                               </button>
                             )}
                           </div>

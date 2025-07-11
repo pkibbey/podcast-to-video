@@ -1,4 +1,5 @@
 import ffmpeg from 'fluent-ffmpeg'
+import { safeDeleteFile } from './audioProcessing'
 
 // Configure FFmpeg path (same as audioProcessing.ts)
 const FFMPEG_PATH = '/opt/homebrew/bin/ffmpeg'
@@ -33,6 +34,9 @@ export async function assembleVideo(
   outputPath: string,
   options: VideoOptions = {}
 ): Promise<string> {
+  // Delete existing file if it exists
+  await safeDeleteFile(outputPath)
+  
   const {
     width = 1920,
     height = 1080,
@@ -77,6 +81,9 @@ export async function generateWaveformVisuals(
   style: VisualStyle,
   options: VideoOptions = {}
 ): Promise<string> {
+  // Delete existing file if it exists
+  await safeDeleteFile(outputPath)
+  
   const {
     width = 1920,
     height = 1080,
@@ -155,6 +162,9 @@ export async function addSubtitlesToVideo(
     borderw?: number
   } = {}
 ): Promise<string> {
+  // Delete existing file if it exists
+  await safeDeleteFile(outputPath)
+  
   const {
     fontsize = 24,
     fontcolor = 'white',
@@ -191,6 +201,9 @@ export async function combineAudioWithDucking(
     releaseTime?: number
   } = {}
 ): Promise<string> {
+  // Delete existing file if it exists
+  await safeDeleteFile(outputPath)
+  
   const {
     musicVolume = 0.3,
     duckingThreshold = -20,
