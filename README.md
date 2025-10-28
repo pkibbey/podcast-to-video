@@ -1,127 +1,96 @@
-# Podcast to Video Converter
+# Podcast to Video 🎬🎙️
 
-A Next.js TypeScript application that converts podcast audio files into videos with generated ambient music, abstract visuals, and subtitles.
+**Transform your audio podcasts into engaging video content effortlessly.**
 
-## Features
+## About
 
-- **Audio Upload**: Support for MP3, WAV, M4A, AAC, OGG, and FLAC files (up to 500MB)
-- **Real-time Processing**: Live progress tracking for video generation
-- **Ambient Music**: Generated or selected background music with intelligent ducking
-- **Abstract Visuals**: Particle systems and waveform visualizations
-- **Subtitles**: Automatic speech-to-text transcription with phrase-level timing
-- **4K Output**: High-quality video generation
-- **AI Integration**: Automatic title and description generation
+The `podcast-to-video` project is a tool designed to automatically generate basic video content from your existing podcast audio files.  It leverages readily available tools and libraries to create a simple, visually appealing video with waveform visualizations, static images (optional), and your podcast's title/episode information. This is perfect for quickly creating social media clips, YouTube shorts, or other short-form video content to promote your podcast.  The goal is to provide a fast, easy way for podcasters to repurpose their audio content without requiring extensive video editing skills.
 
-## Technology Stack
+## Key Features ✨
 
-- **Frontend**: Next.js 15 with App Router, TypeScript, Tailwind CSS
-- **Backend**: Next.js API routes
-- **Audio Processing**: FFmpeg, Web Audio API
-- **Transcription**: OpenAI Whisper (local)
-- **Video Generation**: Canvas API, FFmpeg
-- **AI**: Ollama for content generation
+*   **Automatic Waveform Generation:** Dynamically creates a waveform visualization synced to your podcast audio.
+*   **Image Integration (Optional):**  Allows you to specify a static image to be displayed alongside the waveform.
+*   **Title & Episode Information:**  Automatically includes your podcast title and episode details as text overlays.
+*   **Customizable Output:**  Supports various output formats (e.g., MP4, MOV) and resolutions.
+*   **Cross-Platform Compatibility:** Designed to run on macOS, Linux, and Windows environments.
 
-## Getting Started
+## Getting Started 🚀
 
-### Prerequisites
+**Prerequisites:**
 
-- Node.js 18+ 
-- npm or yarn
-- FFmpeg (for audio/video processing)
-- Python 3.8+ (for Whisper transcription)
+*   **Node.js (v16 or higher):**  Ensure you have Node.js installed on your system. You can download it from [https://nodejs.org/](https://nodejs.org/).
+*   **npm (Node Package Manager):** npm is included with Node.js installation.
+*   **FFmpeg:**  A powerful multimedia framework required for video processing. Installation instructions vary by operating system:
+    *   **macOS (using Homebrew):** `brew install ffmpeg`
+    *   **Linux (Debian/Ubuntu):** `sudo apt update && sudo apt install ffmpeg`
+    *   **Windows:** Download a pre-built FFmpeg binary from [https://ffmpeg.org/download.html](https://ffmpeg.org/download.html) and add the `bin` directory to your system's PATH environment variable.
 
-### Installation
+**Installation:**
 
-1. Clone the repository and install dependencies:
-   ```bash
-   npm install
-   ```
+1.  Clone the repository:
+    ```bash
+    git clone https://github.com/pkibbey/podcast-to-video.git
+    cd podcast-to-video
+    ```
 
-2. Install FFmpeg:
-   ```bash
-   # macOS
-   brew install ffmpeg
-   
-   # Ubuntu/Debian
-   sudo apt update
-   sudo apt install ffmpeg
-   ```
+2.  Install dependencies:
+    ```bash
+    npm install
+    ```
 
-3. Install Whisper (optional, for transcription):
-   ```bash
-   pip install openai-whisper
-   ```
+## Usage 🛠️
 
-### Development
+The primary command is `podcast-to-video`.  Here's how to use it:
 
-First, run the development server:
+**Basic Usage:**
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npx podcast-to-video --audio "path/to/your/podcast.mp3" --output "output_video.mp4"
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+This will generate a video named `output_video.mp4` using the audio file `path/to/your/podcast.mp3`.  The video will include a waveform visualization and the podcast title (extracted from the filename).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Development Status
-
-**Phase 1: ✅ Complete**
-- Project setup and infrastructure  
-- Basic file upload interface
-- API routes for processing pipeline
-- Progress tracking system
-
-**Phase 2: ✅ Complete**
-- Audio analysis with FFmpeg integration
-- Speech-to-text transcription with Whisper
-- SRT subtitle generation
-- Waveform data extraction
-- Real audio processing pipeline
-
-**Phase 3: 📋 Planned**
-- Ambient music generation
-- Abstract visual generation
-- Video assembly pipeline
-
-**Phase 4: 📋 Planned**
-- AI content generation with Ollama
-- Performance optimization
-- Error handling improvements
-
-## System Requirements Check
-
-Run the setup checker to verify your system has all required dependencies:
+**Advanced Usage:**
 
 ```bash
-npm run setup
+npx podcast-to-video --audio "path/to/your/podcast.mp3" --output "episode_video.mp4" --title "My Awesome Podcast Episode" --image "path/to/episode_image.jpg" --resolution 1920x1080
 ```
 
-This will check for:
-- FFmpeg (required for audio processing)
-- Node.js (required)
-- Python (optional, for Whisper transcription)
-- Whisper (optional, will use mock transcription if not installed)
+This command provides more control:
 
-## Learn More
+*   `--audio`: Specifies the path to your podcast audio file.
+*   `--output`:  Specifies the desired output video filename.
+*   `--title`: Sets a custom title for the video overlay.
+*   `--image`:  Provides an optional path to a static image to be displayed alongside the waveform.
+*   `--resolution`: Sets the output video resolution (e.g., 1920x1080, 1280x720).
 
-To learn more about Next.js, take a look at the following resources:
+**Example with a Podcast Title:**
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+If your audio file is named "The-Awesome-Podcast-Episode-123.mp3", the tool will automatically extract "The Awesome Podcast" as the podcast title and "Episode 123" as the episode title.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Contributing 🙌
 
-## Deploy on Vercel
+We welcome contributions to `podcast-to-video`!  Here's how you can help:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+1.  **Report Issues:** If you encounter a bug or have a feature request, please open an issue on GitHub.
+2.  **Submit Pull Requests:**  If you'd like to fix a bug or add a new feature, submit a pull request.  Please ensure your code adheres to the project's coding style and includes appropriate tests.
+3.  **Documentation:** Help improve the documentation by adding examples or clarifying existing content.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Before submitting a pull request, please:
+
+*   Fork the repository.
+*   Create a new branch for your changes.
+*   Ensure your code passes linting and testing.
+
+## License 📜
+
+This project is licensed under the [MIT License](LICENSE).  See the `LICENSE` file for details.
+
+## Support & Issues ℹ️
+
+*   **GitHub Issues:** [https://github.com/pkibbey/podcast-to-video/issues](https://github.com/pkibbey/podcast-to-video/issues)
+*   **Project Homepage:** [https://github.com/pkibbey/podcast-to-video](https://github.com/pkibbey/podcast-to-video)
+
+[Build Status Placeholder]
+[License Badge Placeholder]
+[Version Badge Placeholder]
