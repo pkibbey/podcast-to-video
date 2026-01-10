@@ -4,10 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "source ./venv/bin/activate && next dev --turbopack",
-    "venv": "source ./venv/bin/activate",
-    "dev:venv": "source ./venv/bin/activate && next dev --turbopack",
-    "start": "source ./venv/bin/activate && next start",
+    "dev": "next dev --turbopack",
+    "start": "next start",
     "build": "next build",
     "lint": "next lint",
     "setup": "node scripts/setup-check.js"
