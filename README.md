@@ -1,4 +1,8 @@
-# Podcast to Video
+<p align="center">
+  <img src="./logo.png" alt="MultiCam logo" width="220" />
+</p>
+
+<h1 align="center">Podcast to Video</h1>
 
 Transform podcast audio into visually engaging videos. This application automatically converts podcast episodes into 4K videos complete with generated ambient music, abstract animations, and synchronized subtitles—perfect for sharing content on platforms like YouTube.
 
