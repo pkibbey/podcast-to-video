@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./logo.png" alt="MultiCam logo" width="220" />
+  <img src="./logo.png" alt="MultiCam logo" width="400" />
 </p>
 
 <h1 align="center">Podcast to Video</h1>
